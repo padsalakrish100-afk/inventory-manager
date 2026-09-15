@@ -8,9 +8,17 @@ export type AppSettings = {
 };
 
 export async function getSettings(): Promise<AppSettings> {
-  const row =
-    (await prisma.setting.findUnique({ where: { id: "singleton" } })) ??
-    (await prisma.setting.create({ data: {} }));
+  let row = await prisma.setting.findUnique({ where: { id: "singleton" } });
+
+  if (!row) {
+    try {
+      row = await prisma.setting.create({ data: {} });
+    } catch {
+      // Another concurrent request created it first — read what it wrote.
+      row = await prisma.setting.findUnique({ where: { id: "singleton" } });
+      if (!row) throw new Error("Failed to load or create app settings.");
+    }
+  }
 
   return {
     appName: row.appName,
