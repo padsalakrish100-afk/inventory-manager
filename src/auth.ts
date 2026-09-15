@@ -3,6 +3,9 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
+const LOCK_THRESHOLD = 5;
+const LOCK_MINUTES = 15;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
@@ -23,8 +26,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;
 
+        const now = new Date();
+        const lockExpired = user.lockedUntil !== null && user.lockedUntil <= now;
+
+        if (user.lockedUntil && !lockExpired) {
+          return null;
+        }
+
         const valid = await bcrypt.compare(password, user.passwordHash);
-        if (!valid) return null;
+
+        if (!valid) {
+          const attempts = (lockExpired ? 0 : user.failedLoginAttempts) + 1;
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              failedLoginAttempts: attempts,
+              lockedUntil:
+                attempts >= LOCK_THRESHOLD ? new Date(now.getTime() + LOCK_MINUTES * 60 * 1000) : null,
+            },
+          });
+          return null;
+        }
+
+        if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { failedLoginAttempts: 0, lockedUntil: null },
+          });
+        }
 
         return {
           id: user.id,

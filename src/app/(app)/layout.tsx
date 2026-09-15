@@ -55,9 +55,9 @@ export default async function AppLayout({
           </div>
 
           <div className="flex items-center gap-3 text-sm text-zinc-600">
-            <span>
+            <Link href="/account" className="hover:text-zinc-900 hover:underline">
               {session.user.name} ({session.user.role})
-            </span>
+            </Link>
             <form
               action={async () => {
                 "use server";
