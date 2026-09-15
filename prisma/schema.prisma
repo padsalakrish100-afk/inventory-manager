@@ -1,0 +1,155 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+model Setting {
+  id          String   @id @default("singleton")
+  appName     String   @default("Inventory Manager")
+  locations   String   @default("Surat,Mumbai")
+  accentColor String   @default("#18181b")
+  updatedAt   DateTime @updatedAt
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(STAFF)
+  createdAt    DateTime @default(now())
+
+  transactions Transaction[]
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  sku          String   @unique
+  name         String
+  unit         String   @default("pcs")
+  reorderLevel Int      @default(0)
+  stock        Int      @default(0)
+  location     String?
+  giaCertified Boolean  @default(false)
+
+  // Quality attributes (gemstones)
+  caratWeight Float?
+  color       String?
+  clarity     String?
+  cutGrade    String?
+
+  // Pricing (per unit)
+  costPrice    Float @default(0)
+  sellingPrice Float @default(0)
+
+  lot   Lot?    @relation(fields: [lotId], references: [id])
+  lotId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions Transaction[]
+
+  @@index([lotId])
+}
+
+enum LotStatus {
+  ROUGH
+  SAWING
+  CUTTING
+  POLISHING
+  COMPLETED
+}
+
+enum ExpenseCategory {
+  ROUGH_PURCHASE
+  SAWING
+  CUTTING
+  POLISHING
+  CERTIFICATION
+  OTHER
+}
+
+model Lot {
+  id          String    @id @default(cuid())
+  lotNumber   String    @unique
+  roughWeight Float?
+  description String?
+  status      LotStatus @default(ROUGH)
+  createdAt   DateTime  @default(now())
+
+  products Product[]
+  expenses LotExpense[]
+}
+
+model LotExpense {
+  id          String          @id @default(cuid())
+  category    ExpenseCategory @default(OTHER)
+  description String?
+  amount      Float
+  date        DateTime        @default(now())
+  createdAt   DateTime        @default(now())
+
+  lot   Lot    @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  lotId String
+
+  @@index([lotId])
+}
+
+enum TransactionType {
+  IN
+  OUT
+}
+
+enum PartyType {
+  SUPPLIER
+  CUSTOMER
+  BOTH
+}
+
+model Party {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  type      PartyType @default(BOTH)
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime  @default(now())
+
+  transactions Transaction[]
+}
+
+model Transaction {
+  id        String          @id @default(cuid())
+  type      TransactionType
+  quantity  Int
+  reference String?
+  notes     String?
+  createdAt DateTime        @default(now())
+
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+
+  party   Party?  @relation(fields: [partyId], references: [id])
+  partyId String?
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  @@index([productId])
+  @@index([createdAt])
+  @@index([partyId])
+}
