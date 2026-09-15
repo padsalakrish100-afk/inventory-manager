@@ -4,7 +4,8 @@ import { auth, signOut } from "@/auth";
 import { getSettings } from "@/lib/settings";
 
 const navItems = [
-  { href: "/products", label: "Products" },
+  { href: "/manufacturing", label: "Manufacturing" },
+  { href: "/polish", label: "Polish" },
   { href: "/lots", label: "Lots" },
   { href: "/transactions", label: "Transactions" },
   { href: "/parties", label: "Contacts" },

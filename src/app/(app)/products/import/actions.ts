@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import type { CertificationLab } from "@/generated/prisma/client";
 
 export type ImportResult = {
   error?: string;
@@ -69,7 +70,12 @@ export async function importProducts(
 
     const location = cell(row, "Location", "location") || null;
     const certRaw = cell(row, "Certification", "certification").toLowerCase();
-    const giaCertified = certRaw === "gia" || certRaw === "true" || certRaw === "yes";
+    const certificationLab: CertificationLab =
+      certRaw === "gia" || certRaw === "true" || certRaw === "yes"
+        ? "GIA"
+        : certRaw === "igi"
+          ? "IGI"
+          : "NONE";
 
     const caratRaw = cell(row, "Carat Weight", "caratWeight");
     const caratWeight = caratRaw ? Number(caratRaw) : null;
@@ -126,7 +132,7 @@ export async function importProducts(
       stock: Math.trunc(stock),
       reorderLevel: Math.trunc(reorderLevel),
       location,
-      giaCertified,
+      certificationLab,
       caratWeight,
       color,
       clarity,
@@ -153,7 +159,8 @@ export async function importProducts(
     }
   }
 
-  revalidatePath("/products");
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
   revalidatePath("/dashboard");
 
   return { created, updated, skipped, unmatchedLots };

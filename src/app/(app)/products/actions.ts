@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import type { LotStatus } from "@/generated/prisma/client";
+import type { LotStatus, CertificationLab } from "@/generated/prisma/client";
+import { STAGE_VALUES } from "@/lib/stages";
+import { CERT_VALUES } from "@/lib/certification";
 
-const STAGES: LotStatus[] = ["ROUGH", "SAWING", "CUTTING", "POLISHING", "CERTIFICATION", "COMPLETED"];
+const STAGES = STAGE_VALUES as unknown as LotStatus[];
 
 function parseProductForm(formData: FormData) {
   const sku = String(formData.get("sku") ?? "").trim();
@@ -15,7 +17,7 @@ function parseProductForm(formData: FormData) {
   const stock = Number(formData.get("stock") ?? 0);
   const reorderLevel = Number(formData.get("reorderLevel") ?? 0);
   const location = String(formData.get("location") ?? "").trim() || null;
-  const giaCertified = formData.get("giaCertified") === "true";
+  const certificationLab = String(formData.get("certificationLab") ?? "NONE");
 
   const caratWeightRaw = String(formData.get("caratWeight") ?? "").trim();
   const caratWeight = caratWeightRaw ? Number(caratWeightRaw) : null;
@@ -49,6 +51,9 @@ function parseProductForm(formData: FormData) {
   if (!(STAGES as string[]).includes(stage)) {
     throw new Error("Invalid stage.");
   }
+  if (!(CERT_VALUES as readonly string[]).includes(certificationLab)) {
+    throw new Error("Invalid certification.");
+  }
 
   return {
     sku,
@@ -57,7 +62,7 @@ function parseProductForm(formData: FormData) {
     stock: Math.trunc(stock),
     reorderLevel: Math.trunc(reorderLevel),
     location,
-    giaCertified,
+    certificationLab: certificationLab as CertificationLab,
     caratWeight,
     color,
     clarity,
@@ -76,17 +81,20 @@ export async function createProduct(
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  let stage: LotStatus = "ROUGH";
   try {
     const data = parseProductForm(formData);
+    stage = data.stage;
     await prisma.product.create({ data });
   } catch (error) {
     if (error instanceof Error) return error.message;
     throw error;
   }
 
-  revalidatePath("/products");
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
   revalidatePath("/dashboard");
-  redirect("/products");
+  redirect(stage === "COMPLETED" ? "/polish" : "/manufacturing");
 }
 
 export async function updateProduct(
@@ -97,17 +105,20 @@ export async function updateProduct(
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  let stage: LotStatus = "ROUGH";
   try {
     const data = parseProductForm(formData);
+    stage = data.stage;
     await prisma.product.update({ where: { id: productId }, data });
   } catch (error) {
     if (error instanceof Error) return error.message;
     throw error;
   }
 
-  revalidatePath("/products");
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
   revalidatePath("/dashboard");
-  redirect("/products");
+  redirect(stage === "COMPLETED" ? "/polish" : "/manufacturing");
 }
 
 export async function deleteProduct(productId: string) {
@@ -122,6 +133,59 @@ export async function deleteProduct(productId: string) {
   }
 
   await prisma.product.delete({ where: { id: productId } });
-  revalidatePath("/products");
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
   revalidatePath("/dashboard");
+}
+
+// Records one step a stone went through (e.g. Galaxy scanning by Party X,
+// then Sawing by Party Y) and moves the product's current stage to match.
+export async function addProcessLog(
+  productId: string,
+  _prevState: string | undefined,
+  formData: FormData,
+): Promise<string | undefined> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const stage = String(formData.get("stage") ?? "");
+  const partyName = String(formData.get("party") ?? "").trim();
+  const dateRaw = String(formData.get("date") ?? "").trim();
+  const date = dateRaw ? new Date(dateRaw) : new Date();
+  const notes = String(formData.get("notes") ?? "").trim() || null;
+
+  if (!(STAGES as string[]).includes(stage)) return "Invalid stage.";
+  if (Number.isNaN(date.getTime())) return "Invalid date.";
+
+  let partyId: string | null = null;
+  if (partyName) {
+    const party = await prisma.party.upsert({
+      where: { name: partyName },
+      update: {},
+      create: { name: partyName },
+    });
+    partyId = party.id;
+  }
+
+  await prisma.$transaction([
+    prisma.processLog.create({
+      data: { productId, stage: stage as LotStatus, partyId, date, notes },
+    }),
+    prisma.product.update({ where: { id: productId }, data: { stage: stage as LotStatus } }),
+  ]);
+
+  revalidatePath(`/products/${productId}`);
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
+  revalidatePath("/parties");
+}
+
+export async function deleteProcessLog(productId: string, processLogId: string) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  await prisma.processLog.delete({ where: { id: processLogId } });
+  revalidatePath(`/products/${productId}`);
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
 }

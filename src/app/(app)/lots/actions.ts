@@ -5,9 +5,11 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { computeAllocationPreview } from "@/lib/lot-allocation";
-import { Prisma, type LotStatus, type ExpenseCategory } from "@/generated/prisma/client";
+import { Prisma, type LotStatus, type ExpenseCategory, type CertificationLab } from "@/generated/prisma/client";
+import { STAGE_VALUES } from "@/lib/stages";
+import { CERT_VALUES } from "@/lib/certification";
 
-const STATUSES: LotStatus[] = ["ROUGH", "SAWING", "CUTTING", "POLISHING", "CERTIFICATION", "COMPLETED"];
+const STATUSES = STAGE_VALUES as unknown as LotStatus[];
 const CATEGORIES: ExpenseCategory[] = [
   "ROUGH_PURCHASE",
   "SAWING",
@@ -205,7 +207,8 @@ export async function bulkUpdateStage(
   await prisma.product.updateMany({ where: { lotId }, data: { stage: stage as LotStatus } });
 
   revalidatePath(`/lots/${lotId}`);
-  revalidatePath("/products");
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
 }
 
 export async function deleteExpense(expenseId: string, lotId: string) {
@@ -233,8 +236,8 @@ export async function generateStones(
   const caratWeight = caratRaw ? Number(caratRaw) : null;
   const unit = String(formData.get("unit") ?? "pcs").trim() || "pcs";
   const tracking = String(formData.get("tracking") ?? "individual");
-  const certification = String(formData.get("certification") ?? "NONGIA");
-  const giaCertified = tracking === "loose" ? false : certification === "GIA";
+  const certification = String(formData.get("certification") ?? "NONE");
+  const certificationLab = (tracking === "loose" ? "NONE" : certification) as CertificationLab;
   const stage = String(formData.get("stage") ?? "ROUGH");
 
   if (!Number.isInteger(count) || count < 1 || count > 2000) {
@@ -246,6 +249,9 @@ export async function generateStones(
   }
   if (tracking !== "individual" && tracking !== "loose") {
     return { error: "Invalid tracking mode." };
+  }
+  if (!(CERT_VALUES as readonly string[]).includes(certification)) {
+    return { error: "Invalid certification." };
   }
   if (!(STATUSES as string[]).includes(stage)) return { error: "Invalid stage." };
 
@@ -271,14 +277,15 @@ export async function generateStones(
         unit,
         stock: count,
         caratWeight,
-        giaCertified,
+        certificationLab,
         lotId,
         stage: stage as LotStatus,
       },
     });
 
     revalidatePath(`/lots/${lotId}`);
-    revalidatePath("/products");
+    revalidatePath("/manufacturing");
+    revalidatePath("/polish");
     revalidatePath("/dashboard");
 
     return { created: 1 };
@@ -302,7 +309,7 @@ export async function generateStones(
       unit,
       stock: 1,
       caratWeight,
-      giaCertified,
+      certificationLab,
       lotId,
       stage: stage as LotStatus,
     };
@@ -311,7 +318,8 @@ export async function generateStones(
   const result = await prisma.product.createMany({ data, skipDuplicates: true });
 
   revalidatePath(`/lots/${lotId}`);
-  revalidatePath("/products");
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
   revalidatePath("/dashboard");
 
   return { created: result.count };
@@ -352,6 +360,7 @@ export async function allocateExpenses(lotId: string) {
   `;
 
   revalidatePath(`/lots/${lotId}`);
-  revalidatePath("/products");
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
   revalidatePath("/dashboard");
 }

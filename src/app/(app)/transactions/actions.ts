@@ -66,7 +66,8 @@ export async function createTransaction(
   }
 
   revalidatePath("/transactions");
-  revalidatePath("/products");
+  revalidatePath("/manufacturing");
+  revalidatePath("/polish");
   revalidatePath("/dashboard");
   redirect("/transactions");
 }

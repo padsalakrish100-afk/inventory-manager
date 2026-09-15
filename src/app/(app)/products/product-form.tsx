@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { STAGE_OPTIONS } from "@/lib/stages";
+import { CERT_OPTIONS } from "@/lib/certification";
 
 type ProductFormAction = (
   prevState: string | undefined,
@@ -25,7 +26,7 @@ export function ProductForm({
     stock: number;
     reorderLevel: number;
     location: string | null;
-    giaCertified: boolean;
+    certificationLab: string;
     caratWeight: number | null;
     color: string | null;
     clarity: string | null;
@@ -87,17 +88,20 @@ export function ProductForm({
         </div>
 
         <div>
-          <label htmlFor="giaCertified" className="block text-sm font-medium text-zinc-700">
+          <label htmlFor="certificationLab" className="block text-sm font-medium text-zinc-700">
             Certification
           </label>
           <select
-            id="giaCertified"
-            name="giaCertified"
-            defaultValue={defaultValues?.giaCertified ? "true" : "false"}
+            id="certificationLab"
+            name="certificationLab"
+            defaultValue={defaultValues?.certificationLab ?? "NONE"}
             className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
           >
-            <option value="false">No GIA</option>
-            <option value="true">GIA</option>
+            {CERT_OPTIONS.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
           </select>
         </div>
 

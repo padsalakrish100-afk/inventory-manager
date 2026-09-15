@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { generateStones } from "../actions";
 import { STAGE_OPTIONS } from "@/lib/stages";
+import { CERT_OPTIONS } from "@/lib/certification";
 
 export function GenerateStonesForm({ lotId }: { lotId: string }) {
   const boundAction = generateStones.bind(null, lotId);
@@ -91,18 +92,22 @@ export function GenerateStonesForm({ lotId }: { lotId: string }) {
           <select
             id="certification"
             name="certification"
-            defaultValue="NONGIA"
+            defaultValue="NONE"
             className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
           >
-            <option value="NONGIA">No GIA</option>
-            <option value="GIA">GIA</option>
+            {CERT_OPTIONS.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
           </select>
         </div>
       )}
 
       {tracking === "loose" && (
         <p className="text-xs text-zinc-500">
-          Loose parcels are created as No GIA &mdash; split individual stones out later if any get certified.
+          Loose parcels are created with no certification &mdash; split individual stones out later if any get
+          certified.
         </p>
       )}
 

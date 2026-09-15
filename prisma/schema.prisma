@@ -39,14 +39,14 @@ model User {
 }
 
 model Product {
-  id           String   @id @default(cuid())
-  sku          String   @unique
+  id           String           @id @default(cuid())
+  sku          String           @unique
   name         String
-  unit         String   @default("pcs")
-  reorderLevel Int      @default(0)
-  stock        Int      @default(0)
+  unit         String           @default("pcs")
+  reorderLevel Int              @default(0)
+  stock        Int              @default(0)
   location     String?
-  giaCertified Boolean  @default(false)
+  certificationLab CertificationLab @default(NONE)
 
   // Quality attributes (gemstones)
   caratWeight Float?
@@ -63,23 +63,51 @@ model Product {
 
   // Where this specific SKU sits in the manufacturing process, independent
   // of the lot's overall status (a lot's stones don't all move in lockstep).
+  // Kept in sync with the latest ProcessLog entry for this product.
   stage LotStatus @default(ROUGH)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   transactions Transaction[]
+  processLogs  ProcessLog[]
 
   @@index([lotId])
 }
 
 enum LotStatus {
   ROUGH
+  GALAXY
   SAWING
   CUTTING
   POLISHING
   CERTIFICATION
   COMPLETED
+}
+
+enum CertificationLab {
+  NONE
+  GIA
+  IGI
+}
+
+// A single step a stone went through — which process, who did it (party),
+// and when. A product's full manufacturing history is its list of these.
+model ProcessLog {
+  id        String    @id @default(cuid())
+  stage     LotStatus
+  date      DateTime  @default(now())
+  notes     String?
+  createdAt DateTime  @default(now())
+
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+
+  party   Party?  @relation(fields: [partyId], references: [id])
+  partyId String?
+
+  @@index([productId])
+  @@index([partyId])
 }
 
 enum ExpenseCategory {
@@ -151,6 +179,7 @@ model Party {
 
   transactions Transaction[]
   lotExpenses  LotExpense[]
+  processLogs  ProcessLog[]
 }
 
 model Transaction {

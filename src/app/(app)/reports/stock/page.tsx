@@ -19,10 +19,12 @@ export default async function StockReportPage() {
     byLocation.set(key, entry);
   }
 
-  const gia = products.filter((p) => p.giaCertified);
-  const noGia = products.filter((p) => !p.giaCertified);
+  const gia = products.filter((p) => p.certificationLab === "GIA");
+  const igi = products.filter((p) => p.certificationLab === "IGI");
+  const noCert = products.filter((p) => p.certificationLab === "NONE");
   const giaValue = gia.reduce((sum, p) => sum + p.stock * p.costPrice, 0);
-  const noGiaValue = noGia.reduce((sum, p) => sum + p.stock * p.costPrice, 0);
+  const igiValue = igi.reduce((sum, p) => sum + p.stock * p.costPrice, 0);
+  const noCertValue = noCert.reduce((sum, p) => sum + p.stock * p.costPrice, 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -83,10 +85,15 @@ export default async function StockReportPage() {
                 <td className="px-5 py-3 text-zinc-500">{gia.length}</td>
                 <td className="px-5 py-3 text-zinc-800">{formatCurrency(giaValue)}</td>
               </tr>
+              <tr className="border-b border-zinc-100">
+                <td className="px-5 py-3 text-zinc-900">IGI</td>
+                <td className="px-5 py-3 text-zinc-500">{igi.length}</td>
+                <td className="px-5 py-3 text-zinc-800">{formatCurrency(igiValue)}</td>
+              </tr>
               <tr>
-                <td className="px-5 py-3 text-zinc-900">No GIA</td>
-                <td className="px-5 py-3 text-zinc-500">{noGia.length}</td>
-                <td className="px-5 py-3 text-zinc-800">{formatCurrency(noGiaValue)}</td>
+                <td className="px-5 py-3 text-zinc-900">No certification</td>
+                <td className="px-5 py-3 text-zinc-500">{noCert.length}</td>
+                <td className="px-5 py-3 text-zinc-800">{formatCurrency(noCertValue)}</td>
               </tr>
             </tbody>
           </table>

@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { toCsv, csvResponse } from "@/lib/csv";
+import { CERT_LABELS } from "@/lib/certification";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
         t.product.sku,
         t.product.name,
         t.product.location ?? "",
-        t.product.giaCertified ? "GIA" : "No GIA",
+        CERT_LABELS[t.product.certificationLab] ?? t.product.certificationLab,
         t.type === "IN" ? "Inward" : "Outward",
         t.quantity,
         unitPrice,
