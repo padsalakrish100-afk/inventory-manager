@@ -22,6 +22,22 @@ export function UserForm() {
       </div>
 
       <div>
+        <label htmlFor="username" className="block text-sm font-medium text-zinc-700">
+          Username
+        </label>
+        <input
+          id="username"
+          name="username"
+          type="text"
+          required
+          pattern="[a-z0-9._-]{3,32}"
+          placeholder="e.g. priya.staff"
+          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+        />
+        <p className="mt-1 text-xs text-zinc-500">What they'll type to sign in. Lowercase letters, numbers, dots, underscores, or hyphens.</p>
+      </div>
+
+      <div>
         <label htmlFor="email" className="block text-sm font-medium text-zinc-700">
           Email
         </label>

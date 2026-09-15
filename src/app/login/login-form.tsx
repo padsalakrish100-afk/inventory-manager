@@ -14,15 +14,15 @@ export function LoginForm({ appName }: { appName: string }) {
 
         <form action={formAction} className="mt-6 flex flex-col gap-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-zinc-700">
-              Email
+            <label htmlFor="username" className="block text-sm font-medium text-zinc-700">
+              Username
             </label>
             <input
-              id="email"
-              name="email"
-              type="email"
+              id="username"
+              name="username"
+              type="text"
               required
-              autoComplete="email"
+              autoComplete="username"
               className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
             />
           </div>

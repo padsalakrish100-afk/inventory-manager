@@ -11,7 +11,7 @@ export default async function AccountPage() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900">Your account</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Signed in as {session.user.name} ({session.user.email})
+          Signed in as {session.user.name} (@{session.user.username})
         </p>
       </div>
 

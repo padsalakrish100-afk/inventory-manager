@@ -13,17 +13,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Credentials({
       name: "Credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const email = credentials?.email;
+        const usernameRaw = credentials?.username;
         const password = credentials?.password;
-        if (typeof email !== "string" || typeof password !== "string") {
+        if (typeof usernameRaw !== "string" || typeof password !== "string") {
           return null;
         }
+        const username = usernameRaw.trim().toLowerCase();
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await prisma.user.findUnique({ where: { username } });
         if (!user) return null;
 
         const now = new Date();
@@ -58,7 +59,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return {
           id: user.id,
           name: user.name,
-          email: user.email,
+          username: user.username,
           role: user.role,
         };
       },
@@ -69,6 +70,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.role = (user as { role: string }).role;
         token.id = user.id as string;
+        token.username = (user as { username: string }).username;
       }
       return token;
     },
@@ -76,6 +78,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
+        session.user.username = token.username as string;
       }
       return session;
     },

@@ -3,11 +3,45 @@ import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
 import { DeleteProductButton } from "./delete-button";
 
-export default async function ProductsPage() {
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    caratMin?: string;
+    caratMax?: string;
+    color?: string;
+    clarity?: string;
+    certification?: string;
+  }>;
+}) {
+  const { caratMin, caratMax, color, clarity, certification } = await searchParams;
+
+  const caratMinNum = caratMin ? Number(caratMin) : undefined;
+  const caratMaxNum = caratMax ? Number(caratMax) : undefined;
+
   const products = await prisma.product.findMany({
+    where: {
+      caratWeight: {
+        gte: Number.isFinite(caratMinNum) ? caratMinNum : undefined,
+        lte: Number.isFinite(caratMaxNum) ? caratMaxNum : undefined,
+      },
+      color: color ? { equals: color, mode: "insensitive" } : undefined,
+      clarity: clarity ? { equals: clarity, mode: "insensitive" } : undefined,
+      giaCertified: certification === "GIA" ? true : certification === "NONGIA" ? false : undefined,
+    },
     orderBy: { name: "asc" },
     include: { lot: true },
   });
+
+  const hasFilters = Boolean(caratMin || caratMax || color || clarity || certification);
+
+  const exportParams = new URLSearchParams();
+  if (caratMin) exportParams.set("caratMin", caratMin);
+  if (caratMax) exportParams.set("caratMax", caratMax);
+  if (color) exportParams.set("color", color);
+  if (clarity) exportParams.set("clarity", clarity);
+  if (certification) exportParams.set("certification", certification);
+  const exportHref = `/api/export/products${exportParams.toString() ? `?${exportParams}` : ""}`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -18,7 +52,7 @@ export default async function ProductsPage() {
         </div>
         <div className="flex items-center gap-3">
           <a
-            href="/api/export/products"
+            href={exportHref}
             className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
           >
             Export CSV
@@ -38,6 +72,74 @@ export default async function ProductsPage() {
         </div>
       </div>
 
+      <form className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4">
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Carat from</label>
+          <input
+            type="number"
+            name="caratMin"
+            min={0}
+            step="0.01"
+            defaultValue={caratMin ?? ""}
+            className="mt-1 w-24 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Carat to</label>
+          <input
+            type="number"
+            name="caratMax"
+            min={0}
+            step="0.01"
+            defaultValue={caratMax ?? ""}
+            className="mt-1 w-24 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Color</label>
+          <input
+            type="text"
+            name="color"
+            placeholder="e.g. F"
+            defaultValue={color ?? ""}
+            className="mt-1 w-20 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Clarity</label>
+          <input
+            type="text"
+            name="clarity"
+            placeholder="e.g. VS1"
+            defaultValue={clarity ?? ""}
+            className="mt-1 w-24 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Certification</label>
+          <select
+            name="certification"
+            defaultValue={certification ?? ""}
+            className="mt-1 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">All</option>
+            <option value="GIA">GIA</option>
+            <option value="NONGIA">No GIA</option>
+          </select>
+        </div>
+        <button
+          type="submit"
+          className="rounded-md border border-zinc-300 px-4 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+        >
+          Filter
+        </button>
+        {hasFilters && (
+          <Link href="/products" className="text-sm text-zinc-500 hover:underline">
+            Clear filters
+          </Link>
+        )}
+      </form>
+
       <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
@@ -48,6 +150,8 @@ export default async function ProductsPage() {
               <th className="px-4 py-3 font-medium">Lot</th>
               <th className="px-4 py-3 font-medium">Certification</th>
               <th className="px-4 py-3 font-medium">Carat</th>
+              <th className="px-4 py-3 font-medium">Color</th>
+              <th className="px-4 py-3 font-medium">Clarity</th>
               <th className="px-4 py-3 font-medium">Stock</th>
               <th className="px-4 py-3 font-medium">Reorder level</th>
               <th className="px-4 py-3 font-medium">Stock value</th>
@@ -57,12 +161,24 @@ export default async function ProductsPage() {
           <tbody>
             {products.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-6 text-center text-zinc-500">
-                  No products yet.{" "}
-                  <Link href="/products/new" className="underline">
-                    Add your first product
-                  </Link>
-                  .
+                <td colSpan={12} className="px-4 py-6 text-center text-zinc-500">
+                  {hasFilters ? (
+                    <>
+                      No products match this filter.{" "}
+                      <Link href="/products" className="underline">
+                        Clear filters
+                      </Link>
+                      .
+                    </>
+                  ) : (
+                    <>
+                      No products yet.{" "}
+                      <Link href="/products/new" className="underline">
+                        Add your first product
+                      </Link>
+                      .
+                    </>
+                  )}
                 </td>
               </tr>
             )}
@@ -94,6 +210,8 @@ export default async function ProductsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-zinc-500">{p.caratWeight ?? "—"}</td>
+                  <td className="px-4 py-3 text-zinc-500">{p.color ?? "—"}</td>
+                  <td className="px-4 py-3 text-zinc-500">{p.clarity ?? "—"}</td>
                   <td className={`px-4 py-3 ${low ? "font-medium text-red-600" : "text-zinc-800"}`}>
                     {p.stock} {p.unit}
                   </td>

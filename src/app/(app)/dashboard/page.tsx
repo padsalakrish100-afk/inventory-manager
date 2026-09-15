@@ -1,8 +1,14 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
 
 export default async function DashboardPage() {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (session.user.role !== "ADMIN") redirect("/transactions");
+
   const [productCount, products, recentTransactions] = await Promise.all([
     prisma.product.count(),
     prisma.product.findMany(),

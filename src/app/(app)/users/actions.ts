@@ -22,19 +22,27 @@ export async function createUser(
   await requireAdmin();
 
   const name = String(formData.get("name") ?? "").trim();
+  const username = String(formData.get("username") ?? "").trim().toLowerCase();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const role = String(formData.get("role") ?? "STAFF");
 
-  if (!name || !email) return "Name and email are required.";
+  if (!name || !username || !email) return "Name, username, and email are required.";
+  if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
+    return "Username must be 3-32 characters: lowercase letters, numbers, dots, underscores, or hyphens.";
+  }
   if (password.length < 8) return "Password must be at least 8 characters.";
   if (role !== "ADMIN" && role !== "STAFF") return "Invalid role.";
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) return "A user with that email already exists.";
+  const [existingUsername, existingEmail] = await Promise.all([
+    prisma.user.findUnique({ where: { username } }),
+    prisma.user.findUnique({ where: { email } }),
+  ]);
+  if (existingUsername) return "That username is already taken.";
+  if (existingEmail) return "A user with that email already exists.";
 
   const passwordHash = await bcrypt.hash(password, 10);
-  await prisma.user.create({ data: { name, email, passwordHash, role } });
+  await prisma.user.create({ data: { name, username, email, passwordHash, role } });
 
   revalidatePath("/users");
 }

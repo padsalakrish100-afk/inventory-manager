@@ -4,7 +4,6 @@ import { auth, signOut } from "@/auth";
 import { getSettings } from "@/lib/settings";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard" },
   { href: "/products", label: "Products" },
   { href: "/lots", label: "Lots" },
   { href: "/transactions", label: "Transactions" },
@@ -32,6 +31,11 @@ export default async function AppLayout({
           <div className="flex items-center gap-6">
             <span className="font-semibold text-[var(--accent)]">{appName}</span>
             <nav className="flex gap-4 text-sm">
+              {isAdmin && (
+                <Link href="/dashboard" className="text-zinc-600 hover:text-zinc-900">
+                  Dashboard
+                </Link>
+              )}
               {navItems.map((item) => (
                 <Link
                   key={item.href}

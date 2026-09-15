@@ -6,7 +6,7 @@ import { SettingsForm } from "./settings-form";
 export default async function SettingsPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  if (session.user.role !== "ADMIN") redirect("/transactions");
 
   const settings = await getSettings();
 

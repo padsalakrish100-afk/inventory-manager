@@ -9,13 +9,13 @@ export async function loginAction(
 ): Promise<string | undefined> {
   try {
     await signIn("credentials", {
-      email: formData.get("email"),
+      username: formData.get("username"),
       password: formData.get("password"),
       redirectTo: "/dashboard",
     });
   } catch (error) {
     if (error instanceof AuthError) {
-      return "Invalid email or password.";
+      return "Invalid username or password.";
     }
     throw error;
   }

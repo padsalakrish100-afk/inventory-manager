@@ -7,7 +7,7 @@ import { DeleteUserButton } from "./delete-button";
 export default async function UsersPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/dashboard");
+  if (session.user.role !== "ADMIN") redirect("/transactions");
 
   const users = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
 
@@ -24,6 +24,7 @@ export default async function UsersPage() {
             <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Username</th>
                 <th className="px-4 py-3 font-medium">Email</th>
                 <th className="px-4 py-3 font-medium">Role</th>
                 <th className="px-4 py-3 font-medium"></th>
@@ -33,6 +34,7 @@ export default async function UsersPage() {
               {users.map((u) => (
                 <tr key={u.id} className="border-b border-zinc-100 last:border-0">
                   <td className="px-4 py-3 text-zinc-900">{u.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-zinc-500">{u.username}</td>
                   <td className="px-4 py-3 text-zinc-500">{u.email}</td>
                   <td className="px-4 py-3 text-zinc-500">{u.role}</td>
                   <td className="px-4 py-3 text-right">

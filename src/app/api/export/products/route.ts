@@ -2,13 +2,31 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { toCsv, csvResponse } from "@/lib/csv";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) {
     return new Response("Unauthorized", { status: 401 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const caratMin = searchParams.get("caratMin");
+  const caratMax = searchParams.get("caratMax");
+  const color = searchParams.get("color");
+  const clarity = searchParams.get("clarity");
+  const certification = searchParams.get("certification");
+  const caratMinNum = caratMin ? Number(caratMin) : undefined;
+  const caratMaxNum = caratMax ? Number(caratMax) : undefined;
+
   const products = await prisma.product.findMany({
+    where: {
+      caratWeight: {
+        gte: Number.isFinite(caratMinNum) ? caratMinNum : undefined,
+        lte: Number.isFinite(caratMaxNum) ? caratMaxNum : undefined,
+      },
+      color: color ? { equals: color, mode: "insensitive" } : undefined,
+      clarity: clarity ? { equals: clarity, mode: "insensitive" } : undefined,
+      giaCertified: certification === "GIA" ? true : certification === "NONGIA" ? false : undefined,
+    },
     orderBy: { name: "asc" },
     include: { lot: true },
   });
