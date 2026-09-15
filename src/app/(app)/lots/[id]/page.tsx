@@ -24,7 +24,7 @@ const categoryLabel: Record<string, string> = {
 
 export default async function LotDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [lot, parties] = await Promise.all([
+  const [lot, parties, processRates] = await Promise.all([
     prisma.lot.findUnique({
       where: { id },
       include: {
@@ -33,6 +33,10 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
       },
     }),
     prisma.party.findMany({ orderBy: { name: "asc" } }),
+    prisma.processRate.findMany({
+      include: { party: true },
+      orderBy: [{ stage: "asc" }, { party: { name: "asc" } }],
+    }),
   ]);
   if (!lot) notFound();
 
@@ -97,7 +101,18 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
         <section className="rounded-lg border border-zinc-200 bg-white p-5">
           <h2 className="font-medium text-zinc-900">Add expense</h2>
           <div className="mt-4">
-            <ExpenseForm lotId={lot.id} partyNames={parties.map((p) => p.name)} />
+            <ExpenseForm
+              lotId={lot.id}
+              partyNames={parties.map((p) => p.name)}
+              savedRates={processRates.map((r) => ({
+                id: r.id,
+                stage: r.stage,
+                partyName: r.party.name,
+                ratePerCarat: r.ratePerCarat,
+                caratMin: r.caratMin,
+                caratMax: r.caratMax,
+              }))}
+            />
           </div>
         </section>
 

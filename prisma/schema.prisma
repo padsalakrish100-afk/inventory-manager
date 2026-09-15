@@ -156,6 +156,24 @@ model LotExpense {
   @@index([partyId])
 }
 
+// A saved price list entry — what a given party charges per carat for a
+// given process — so entering a lot expense doesn't mean retyping the same
+// rate every time. Managed from Settings.
+model ProcessRate {
+  id           String    @id @default(cuid())
+  stage        LotStatus
+  ratePerCarat Float
+  caratMin     Float?
+  caratMax     Float?
+  createdAt    DateTime  @default(now())
+
+  party   Party  @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  partyId String
+
+  @@index([stage])
+  @@index([partyId])
+}
+
 enum TransactionType {
   IN
   OUT
@@ -180,6 +198,7 @@ model Party {
   transactions Transaction[]
   lotExpenses  LotExpense[]
   processLogs  ProcessLog[]
+  processRates ProcessRate[]
 }
 
 model Transaction {

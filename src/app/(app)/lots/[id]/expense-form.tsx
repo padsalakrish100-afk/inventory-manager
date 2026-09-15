@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { addExpense } from "../actions";
+import { STAGE_LABELS } from "@/lib/stages";
 
 const categories = [
   { value: "ROUGH_PURCHASE", label: "Rough purchase" },
@@ -12,10 +13,41 @@ const categories = [
   { value: "OTHER", label: "Other" },
 ];
 
-export function ExpenseForm({ lotId, partyNames }: { lotId: string; partyNames: string[] }) {
+export type SavedRate = {
+  id: string;
+  stage: string;
+  partyName: string;
+  ratePerCarat: number;
+  caratMin: number | null;
+  caratMax: number | null;
+};
+
+export function ExpenseForm({
+  lotId,
+  partyNames,
+  savedRates = [],
+}: {
+  lotId: string;
+  partyNames: string[];
+  savedRates?: SavedRate[];
+}) {
   const boundAction = addExpense.bind(null, lotId);
   const [error, formAction, pending] = useActionState(boundAction, undefined);
   const [mode, setMode] = useState<"flat" | "rate">("flat");
+
+  const partyRef = useRef<HTMLInputElement>(null);
+  const rateRef = useRef<HTMLInputElement>(null);
+  const caratMinRef = useRef<HTMLInputElement>(null);
+  const caratMaxRef = useRef<HTMLInputElement>(null);
+
+  function applySavedRate(rateId: string) {
+    const rate = savedRates.find((r) => r.id === rateId);
+    if (!rate) return;
+    if (partyRef.current) partyRef.current.value = rate.partyName;
+    if (rateRef.current) rateRef.current.value = String(rate.ratePerCarat);
+    if (caratMinRef.current) caratMinRef.current.value = rate.caratMin !== null ? String(rate.caratMin) : "";
+    if (caratMaxRef.current) caratMaxRef.current.value = rate.caratMax !== null ? String(rate.caratMax) : "";
+  }
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -75,6 +107,7 @@ export function ExpenseForm({ lotId, partyNames }: { lotId: string; partyNames: 
           Party (vendor, karigar, lab...)
         </label>
         <input
+          ref={partyRef}
           id="party"
           name="party"
           type="text"
@@ -88,6 +121,33 @@ export function ExpenseForm({ lotId, partyNames }: { lotId: string; partyNames: 
           ))}
         </datalist>
       </div>
+
+      {mode === "rate" && savedRates.length > 0 && (
+        <div>
+          <label htmlFor="savedRate" className="block text-sm font-medium text-zinc-700">
+            Use a saved rate
+          </label>
+          <select
+            id="savedRate"
+            defaultValue=""
+            onChange={(e) => applySavedRate(e.target.value)}
+            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+          >
+            <option value="">Choose one to fill in party, rate and carat range below...</option>
+            {savedRates.map((r) => (
+              <option key={r.id} value={r.id}>
+                {STAGE_LABELS[r.stage] ?? r.stage} — {r.partyName} — ₹{r.ratePerCarat.toFixed(2)}/ct
+                {r.caratMin !== null || r.caratMax !== null
+                  ? ` (${r.caratMin ?? "0"}–${r.caratMax ?? "∞"}ct)`
+                  : ""}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-zinc-500">
+            Set these up in Settings so they don't need retyping each time.
+          </p>
+        </div>
+      )}
 
       {mode === "flat" ? (
         <div>
@@ -111,6 +171,7 @@ export function ExpenseForm({ lotId, partyNames }: { lotId: string; partyNames: 
               Rate per carat (₹)
             </label>
             <input
+              ref={rateRef}
               id="ratePerCarat"
               name="ratePerCarat"
               type="number"
@@ -127,6 +188,7 @@ export function ExpenseForm({ lotId, partyNames }: { lotId: string; partyNames: 
                 Carat from
               </label>
               <input
+                ref={caratMinRef}
                 id="caratMin"
                 name="caratMin"
                 type="number"
@@ -141,6 +203,7 @@ export function ExpenseForm({ lotId, partyNames }: { lotId: string; partyNames: 
                 Carat to
               </label>
               <input
+                ref={caratMaxRef}
                 id="caratMax"
                 name="caratMax"
                 type="number"
