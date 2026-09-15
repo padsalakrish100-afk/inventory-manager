@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { computeAllocationPreview } from "@/lib/lot-allocation";
 import { Prisma, type LotStatus, type ExpenseCategory } from "@/generated/prisma/client";
 
-const STATUSES: LotStatus[] = ["ROUGH", "SAWING", "CUTTING", "POLISHING", "COMPLETED"];
+const STATUSES: LotStatus[] = ["ROUGH", "SAWING", "CUTTING", "POLISHING", "CERTIFICATION", "COMPLETED"];
 const CATEGORIES: ExpenseCategory[] = [
   "ROUGH_PURCHASE",
   "SAWING",
@@ -114,20 +114,98 @@ export async function addExpense(
 
   const category = String(formData.get("category") ?? "OTHER");
   const description = String(formData.get("description") ?? "").trim() || null;
-  const amount = Number(formData.get("amount") ?? 0);
   const dateRaw = String(formData.get("date") ?? "").trim();
   const date = dateRaw ? new Date(dateRaw) : new Date();
+  const mode = String(formData.get("mode") ?? "flat");
+  const partyName = String(formData.get("party") ?? "").trim();
 
   if (!(CATEGORIES as string[]).includes(category)) return "Invalid category.";
-  if (!Number.isFinite(amount) || amount <= 0) return "Amount must be a positive number.";
   if (Number.isNaN(date.getTime())) return "Invalid date.";
+  if (mode !== "flat" && mode !== "rate") return "Invalid entry mode.";
 
-  await prisma.lotExpense.create({
-    data: { lotId, category: category as ExpenseCategory, description, amount, date },
-  });
+  let partyId: string | null = null;
+  if (partyName) {
+    const party = await prisma.party.upsert({
+      where: { name: partyName },
+      update: {},
+      create: { name: partyName },
+    });
+    partyId = party.id;
+  }
+
+  if (mode === "rate") {
+    const ratePerCarat = Number(formData.get("ratePerCarat") ?? 0);
+    const caratMinRaw = String(formData.get("caratMin") ?? "").trim();
+    const caratMaxRaw = String(formData.get("caratMax") ?? "").trim();
+    const caratMin = caratMinRaw ? Number(caratMinRaw) : null;
+    const caratMax = caratMaxRaw ? Number(caratMaxRaw) : null;
+
+    if (!Number.isFinite(ratePerCarat) || ratePerCarat <= 0) {
+      return "Rate per carat must be a positive number.";
+    }
+    if (caratMin !== null && !Number.isFinite(caratMin)) return "Invalid carat minimum.";
+    if (caratMax !== null && !Number.isFinite(caratMax)) return "Invalid carat maximum.";
+    if (caratMin !== null && caratMax !== null && caratMin > caratMax) {
+      return "Carat minimum can't be greater than the maximum.";
+    }
+
+    const matches = await prisma.product.findMany({
+      where: {
+        lotId,
+        caratWeight: { not: null, gte: caratMin ?? undefined, lte: caratMax ?? undefined },
+      },
+      select: { stock: true, caratWeight: true },
+    });
+    const totalCarats = matches.reduce((sum, p) => sum + p.stock * (p.caratWeight ?? 0), 0);
+
+    if (totalCarats <= 0) {
+      return "No SKUs in this lot have a carat weight in that range — set carat weight on the relevant SKUs first.";
+    }
+
+    const amount = ratePerCarat * totalCarats;
+
+    await prisma.lotExpense.create({
+      data: {
+        lotId,
+        category: category as ExpenseCategory,
+        description,
+        amount,
+        date,
+        partyId,
+        ratePerCarat,
+        caratMin,
+        caratMax,
+      },
+    });
+  } else {
+    const amount = Number(formData.get("amount") ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) return "Amount must be a positive number.";
+
+    await prisma.lotExpense.create({
+      data: { lotId, category: category as ExpenseCategory, description, amount, date, partyId },
+    });
+  }
 
   revalidatePath(`/lots/${lotId}`);
   revalidatePath("/lots");
+  revalidatePath("/parties");
+}
+
+export async function bulkUpdateStage(
+  lotId: string,
+  _prevState: string | undefined,
+  formData: FormData,
+): Promise<string | undefined> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const stage = String(formData.get("stage") ?? "");
+  if (!(STATUSES as string[]).includes(stage)) return "Invalid stage.";
+
+  await prisma.product.updateMany({ where: { lotId }, data: { stage: stage as LotStatus } });
+
+  revalidatePath(`/lots/${lotId}`);
+  revalidatePath("/products");
 }
 
 export async function deleteExpense(expenseId: string, lotId: string) {
@@ -157,6 +235,7 @@ export async function generateStones(
   const tracking = String(formData.get("tracking") ?? "individual");
   const certification = String(formData.get("certification") ?? "NONGIA");
   const giaCertified = tracking === "loose" ? false : certification === "GIA";
+  const stage = String(formData.get("stage") ?? "ROUGH");
 
   if (!Number.isInteger(count) || count < 1 || count > 2000) {
     return { error: "Number of stones must be between 1 and 2000." };
@@ -168,6 +247,7 @@ export async function generateStones(
   if (tracking !== "individual" && tracking !== "loose") {
     return { error: "Invalid tracking mode." };
   }
+  if (!(STATUSES as string[]).includes(stage)) return { error: "Invalid stage." };
 
   const lot = await prisma.lot.findUnique({ where: { id: lotId } });
   if (!lot) return { error: "Lot not found." };
@@ -185,7 +265,16 @@ export async function generateStones(
       existingLoose.length === 0 ? `${lot.lotNumber}-LOOSE` : `${lot.lotNumber}-LOOSE-${nextIndex}`;
 
     await prisma.product.create({
-      data: { sku, name: namePrefix, unit, stock: count, caratWeight, giaCertified, lotId },
+      data: {
+        sku,
+        name: namePrefix,
+        unit,
+        stock: count,
+        caratWeight,
+        giaCertified,
+        lotId,
+        stage: stage as LotStatus,
+      },
     });
 
     revalidatePath(`/lots/${lotId}`);
@@ -215,6 +304,7 @@ export async function generateStones(
       caratWeight,
       giaCertified,
       lotId,
+      stage: stage as LotStatus,
     };
   });
 

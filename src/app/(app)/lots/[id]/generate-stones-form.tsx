@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { generateStones } from "../actions";
+import { STAGE_OPTIONS } from "@/lib/stages";
 
 export function GenerateStonesForm({ lotId }: { lotId: string }) {
   const boundAction = generateStones.bind(null, lotId);
@@ -104,6 +105,27 @@ export function GenerateStonesForm({ lotId }: { lotId: string }) {
           Loose parcels are created as No GIA &mdash; split individual stones out later if any get certified.
         </p>
       )}
+
+      <div>
+        <label htmlFor="stage" className="block text-sm font-medium text-zinc-700">
+          Stage
+        </label>
+        <select
+          id="stage"
+          name="stage"
+          defaultValue="ROUGH"
+          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+        >
+          {STAGE_OPTIONS.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-zinc-500">
+          Where these {tracking === "loose" ? "pieces are" : "stones are"} in the process right now.
+        </p>
+      </div>
 
       <div>
         <label htmlFor="caratWeight" className="block text-sm font-medium text-zinc-700">

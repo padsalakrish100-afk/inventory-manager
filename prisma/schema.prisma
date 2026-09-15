@@ -61,6 +61,10 @@ model Product {
   lot   Lot?    @relation(fields: [lotId], references: [id])
   lotId String?
 
+  // Where this specific SKU sits in the manufacturing process, independent
+  // of the lot's overall status (a lot's stones don't all move in lockstep).
+  stage LotStatus @default(ROUGH)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -74,6 +78,7 @@ enum LotStatus {
   SAWING
   CUTTING
   POLISHING
+  CERTIFICATION
   COMPLETED
 }
 
@@ -107,10 +112,20 @@ model LotExpense {
   date        DateTime        @default(now())
   createdAt   DateTime        @default(now())
 
+  // Optional rate-based entry: amount was computed as ratePerCarat times
+  // the total carats of this lot's stones within [caratMin, caratMax].
+  ratePerCarat Float?
+  caratMin     Float?
+  caratMax     Float?
+
+  party   Party?  @relation(fields: [partyId], references: [id])
+  partyId String?
+
   lot   Lot    @relation(fields: [lotId], references: [id], onDelete: Cascade)
   lotId String
 
   @@index([lotId])
+  @@index([partyId])
 }
 
 enum TransactionType {
@@ -135,6 +150,7 @@ model Party {
   createdAt DateTime  @default(now())
 
   transactions Transaction[]
+  lotExpenses  LotExpense[]
 }
 
 model Transaction {

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
 import { computeAllocationPreview } from "@/lib/lot-allocation";
+import { STAGE_LABELS, STAGE_STYLES } from "@/lib/stages";
 import { updateLot } from "../actions";
 import { LotForm } from "../lot-form";
 import { ExpenseForm } from "./expense-form";
@@ -10,6 +11,7 @@ import { DeleteExpenseButton } from "./delete-expense-button";
 import { DeleteLotButton } from "./delete-lot-button";
 import { AllocateButton } from "./allocate-button";
 import { GenerateStonesForm } from "./generate-stones-form";
+import { BulkStageForm } from "./bulk-stage-form";
 
 const categoryLabel: Record<string, string> = {
   ROUGH_PURCHASE: "Rough purchase",
@@ -22,13 +24,16 @@ const categoryLabel: Record<string, string> = {
 
 export default async function LotDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const lot = await prisma.lot.findUnique({
-    where: { id },
-    include: {
-      expenses: { orderBy: { date: "desc" } },
-      products: { orderBy: { name: "asc" } },
-    },
-  });
+  const [lot, parties] = await Promise.all([
+    prisma.lot.findUnique({
+      where: { id },
+      include: {
+        expenses: { orderBy: { date: "desc" }, include: { party: true } },
+        products: { orderBy: { name: "asc" } },
+      },
+    }),
+    prisma.party.findMany({ orderBy: { name: "asc" } }),
+  ]);
   if (!lot) notFound();
 
   const totalExpense = lot.expenses.reduce((sum, e) => sum + e.amount, 0);
@@ -92,7 +97,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
         <section className="rounded-lg border border-zinc-200 bg-white p-5">
           <h2 className="font-medium text-zinc-900">Add expense</h2>
           <div className="mt-4">
-            <ExpenseForm lotId={lot.id} />
+            <ExpenseForm lotId={lot.id} partyNames={parties.map((p) => p.name)} />
           </div>
         </section>
 
@@ -117,7 +122,9 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
               <tr>
                 <th className="px-5 py-3 font-medium">Date</th>
                 <th className="px-5 py-3 font-medium">Category</th>
+                <th className="px-5 py-3 font-medium">Party</th>
                 <th className="px-5 py-3 font-medium">Description</th>
+                <th className="px-5 py-3 font-medium">Rate</th>
                 <th className="px-5 py-3 font-medium">Amount</th>
                 <th className="px-5 py-3 font-medium"></th>
               </tr>
@@ -125,7 +132,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
             <tbody>
               {lot.expenses.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-6 text-center text-zinc-500">
+                  <td colSpan={7} className="px-5 py-6 text-center text-zinc-500">
                     No expenses recorded yet.
                   </td>
                 </tr>
@@ -136,7 +143,17 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
                     {e.date.toLocaleDateString()}
                   </td>
                   <td className="px-5 py-3 text-zinc-800">{categoryLabel[e.category]}</td>
+                  <td className="px-5 py-3 text-zinc-500">{e.party?.name ?? "—"}</td>
                   <td className="px-5 py-3 text-zinc-500">{e.description ?? "—"}</td>
+                  <td className="px-5 py-3 whitespace-nowrap text-zinc-500">
+                    {e.ratePerCarat !== null
+                      ? `${formatCurrency(e.ratePerCarat)}/ct${
+                          e.caratMin !== null || e.caratMax !== null
+                            ? ` (${e.caratMin ?? "0"}–${e.caratMax ?? "∞"}ct)`
+                            : ""
+                        }`
+                      : "—"}
+                  </td>
                   <td className="px-5 py-3 text-zinc-800">{formatCurrency(e.amount)}</td>
                   <td className="px-5 py-3 text-right">
                     <DeleteExpenseButton expenseId={e.id} lotId={lot.id} />
@@ -147,7 +164,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
             {lot.expenses.length > 0 && (
               <tfoot>
                 <tr className="border-t border-zinc-200 bg-zinc-50">
-                  <td colSpan={3} className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  <td colSpan={5} className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wide text-zinc-500">
                     Total
                   </td>
                   <td className="px-5 py-3 font-medium text-zinc-900">{formatCurrency(totalExpense)}</td>
@@ -207,17 +224,23 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
       </section>
 
       <section className="rounded-lg border border-zinc-200 bg-white">
-        <h2 className="px-5 pt-5 font-medium text-zinc-900">SKUs from this lot</h2>
-        <p className="px-5 pb-1 text-sm text-zinc-500">
-          Generate stones above for individual pieces, or link an existing product to this lot
-          from the product's edit page.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-5">
+          <div>
+            <h2 className="font-medium text-zinc-900">SKUs from this lot</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Generate stones above for individual pieces, or link an existing product to this lot
+              from the product's edit page.
+            </p>
+          </div>
+          <BulkStageForm lotId={lot.id} skuCount={lot.products.length} />
+        </div>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
               <tr>
                 <th className="px-5 py-3 font-medium">SKU</th>
                 <th className="px-5 py-3 font-medium">Name</th>
+                <th className="px-5 py-3 font-medium">Stage</th>
                 <th className="px-5 py-3 font-medium">Stock</th>
                 <th className="px-5 py-3 font-medium">Cost price</th>
               </tr>
@@ -225,7 +248,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
             <tbody>
               {lot.products.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-6 text-center text-zinc-500">
+                  <td colSpan={5} className="px-5 py-6 text-center text-zinc-500">
                     No SKUs linked to this lot yet.
                   </td>
                 </tr>
@@ -237,6 +260,11 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
                     <Link href={`/products/${p.id}`} className="text-zinc-900 hover:underline">
                       {p.name}
                     </Link>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STAGE_STYLES[p.stage]}`}>
+                      {STAGE_LABELS[p.stage]}
+                    </span>
                   </td>
                   <td className="px-5 py-3 text-zinc-800">
                     {p.stock} {p.unit}

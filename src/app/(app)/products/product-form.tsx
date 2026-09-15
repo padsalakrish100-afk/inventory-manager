@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { STAGE_OPTIONS } from "@/lib/stages";
 
 type ProductFormAction = (
   prevState: string | undefined,
@@ -32,6 +33,7 @@ export function ProductForm({
     costPrice: number;
     sellingPrice: number;
     lotId: string | null;
+    stage: string;
   };
   submitLabel: string;
   lots?: LotOption[];
@@ -113,6 +115,26 @@ export function ProductForm({
             {lots.map((lot) => (
               <option key={lot.id} value={lot.id}>
                 {lot.lotNumber}
+              </option>
+            ))}
+          </select>
+        </div>
+      </FormSection>
+
+      <FormSection title="Manufacturing" subtitle="Where this SKU is in the process right now.">
+        <div>
+          <label htmlFor="stage" className="block text-sm font-medium text-zinc-700">
+            Stage
+          </label>
+          <select
+            id="stage"
+            name="stage"
+            defaultValue={defaultValues?.stage ?? "ROUGH"}
+            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+          >
+            {STAGE_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
               </option>
             ))}
           </select>

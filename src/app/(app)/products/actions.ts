@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import type { LotStatus } from "@/generated/prisma/client";
+
+const STAGES: LotStatus[] = ["ROUGH", "SAWING", "CUTTING", "POLISHING", "CERTIFICATION", "COMPLETED"];
 
 function parseProductForm(formData: FormData) {
   const sku = String(formData.get("sku") ?? "").trim();
@@ -23,6 +26,7 @@ function parseProductForm(formData: FormData) {
   const costPrice = Number(formData.get("costPrice") ?? 0);
   const sellingPrice = Number(formData.get("sellingPrice") ?? 0);
   const lotId = String(formData.get("lotId") ?? "").trim() || null;
+  const stage = String(formData.get("stage") ?? "ROUGH");
 
   if (!sku || !name) {
     throw new Error("SKU and name are required.");
@@ -42,6 +46,9 @@ function parseProductForm(formData: FormData) {
   if (!Number.isFinite(sellingPrice) || sellingPrice < 0) {
     throw new Error("Selling price must be a non-negative number.");
   }
+  if (!(STAGES as string[]).includes(stage)) {
+    throw new Error("Invalid stage.");
+  }
 
   return {
     sku,
@@ -58,6 +65,7 @@ function parseProductForm(formData: FormData) {
     costPrice,
     sellingPrice,
     lotId,
+    stage: stage as LotStatus,
   };
 }
 

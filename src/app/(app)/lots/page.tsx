@@ -1,22 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
-
-const statusLabel: Record<string, string> = {
-  ROUGH: "Rough",
-  SAWING: "Sawing",
-  CUTTING: "Cutting",
-  POLISHING: "Polishing",
-  COMPLETED: "Completed",
-};
-
-const statusStyle: Record<string, string> = {
-  ROUGH: "bg-zinc-100 text-zinc-600",
-  SAWING: "bg-amber-50 text-amber-700",
-  CUTTING: "bg-amber-50 text-amber-700",
-  POLISHING: "bg-blue-50 text-blue-700",
-  COMPLETED: "bg-emerald-50 text-emerald-700",
-};
+import { STAGE_LABELS, STAGE_STYLES } from "@/lib/stages";
 
 export default async function LotsPage() {
   const lots = await prisma.lot.findMany({
@@ -87,8 +72,8 @@ export default async function LotsPage() {
                     </Link>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[lot.status]}`}>
-                      {statusLabel[lot.status]}
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STAGE_STYLES[lot.status]}`}>
+                      {STAGE_LABELS[lot.status]}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-zinc-500">

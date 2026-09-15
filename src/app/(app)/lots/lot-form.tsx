@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { STAGE_OPTIONS } from "@/lib/stages";
 
 type LotFormAction = (
   prevState: string | undefined,
@@ -91,11 +92,11 @@ export function LotForm({
           defaultValue={defaultValues?.status ?? "ROUGH"}
           className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
         >
-          <option value="ROUGH">Rough</option>
-          <option value="SAWING">Sawing</option>
-          <option value="CUTTING">Cutting</option>
-          <option value="POLISHING">Polishing</option>
-          <option value="COMPLETED">Completed</option>
+          {STAGE_OPTIONS.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
         </select>
       </div>
 

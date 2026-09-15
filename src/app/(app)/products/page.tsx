@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
+import { STAGE_LABELS, STAGE_STYLES, STAGE_OPTIONS, STAGE_VALUES } from "@/lib/stages";
+import type { LotStatus } from "@/generated/prisma/client";
 import { DeleteProductButton } from "./delete-button";
 
 export default async function ProductsPage({
@@ -12,12 +14,15 @@ export default async function ProductsPage({
     color?: string;
     clarity?: string;
     certification?: string;
+    stage?: string;
   }>;
 }) {
-  const { caratMin, caratMax, color, clarity, certification } = await searchParams;
+  const { caratMin, caratMax, color, clarity, certification, stage } = await searchParams;
 
   const caratMinNum = caratMin ? Number(caratMin) : undefined;
   const caratMaxNum = caratMax ? Number(caratMax) : undefined;
+  const validStage =
+    stage && (STAGE_VALUES as readonly string[]).includes(stage) ? (stage as LotStatus) : undefined;
 
   const products = await prisma.product.findMany({
     where: {
@@ -28,12 +33,13 @@ export default async function ProductsPage({
       color: color ? { equals: color, mode: "insensitive" } : undefined,
       clarity: clarity ? { equals: clarity, mode: "insensitive" } : undefined,
       giaCertified: certification === "GIA" ? true : certification === "NONGIA" ? false : undefined,
+      stage: validStage,
     },
     orderBy: { name: "asc" },
     include: { lot: true },
   });
 
-  const hasFilters = Boolean(caratMin || caratMax || color || clarity || certification);
+  const hasFilters = Boolean(caratMin || caratMax || color || clarity || certification || stage);
 
   const exportParams = new URLSearchParams();
   if (caratMin) exportParams.set("caratMin", caratMin);
@@ -41,6 +47,7 @@ export default async function ProductsPage({
   if (color) exportParams.set("color", color);
   if (clarity) exportParams.set("clarity", clarity);
   if (certification) exportParams.set("certification", certification);
+  if (stage) exportParams.set("stage", stage);
   const exportHref = `/api/export/products${exportParams.toString() ? `?${exportParams}` : ""}`;
 
   return (
@@ -127,6 +134,21 @@ export default async function ProductsPage({
             <option value="NONGIA">No GIA</option>
           </select>
         </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500">Stage</label>
+          <select
+            name="stage"
+            defaultValue={stage ?? ""}
+            className="mt-1 rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">All</option>
+            {STAGE_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <button
           type="submit"
           className="rounded-md border border-zinc-300 px-4 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
@@ -148,6 +170,7 @@ export default async function ProductsPage({
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Location</th>
               <th className="px-4 py-3 font-medium">Lot</th>
+              <th className="px-4 py-3 font-medium">Stage</th>
               <th className="px-4 py-3 font-medium">Certification</th>
               <th className="px-4 py-3 font-medium">Carat</th>
               <th className="px-4 py-3 font-medium">Color</th>
@@ -161,7 +184,7 @@ export default async function ProductsPage({
           <tbody>
             {products.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={13} className="px-4 py-6 text-center text-zinc-500">
                   {hasFilters ? (
                     <>
                       No products match this filter.{" "}
@@ -197,6 +220,11 @@ export default async function ProductsPage({
                     ) : (
                       "—"
                     )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STAGE_STYLES[p.stage]}`}>
+                      {STAGE_LABELS[p.stage]}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <span

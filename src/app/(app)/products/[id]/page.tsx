@@ -45,6 +45,7 @@ export default async function EditProductPage({
           costPrice: product.costPrice,
           sellingPrice: product.sellingPrice,
           lotId: product.lotId,
+          stage: product.stage,
         }}
       />
     </div>

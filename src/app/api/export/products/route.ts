@@ -1,6 +1,8 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { toCsv, csvResponse } from "@/lib/csv";
+import { STAGE_LABELS, STAGE_VALUES } from "@/lib/stages";
+import type { LotStatus } from "@/generated/prisma/client";
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -14,8 +16,11 @@ export async function GET(request: Request) {
   const color = searchParams.get("color");
   const clarity = searchParams.get("clarity");
   const certification = searchParams.get("certification");
+  const stage = searchParams.get("stage");
   const caratMinNum = caratMin ? Number(caratMin) : undefined;
   const caratMaxNum = caratMax ? Number(caratMax) : undefined;
+  const validStage =
+    stage && (STAGE_VALUES as readonly string[]).includes(stage) ? (stage as LotStatus) : undefined;
 
   const products = await prisma.product.findMany({
     where: {
@@ -26,6 +31,7 @@ export async function GET(request: Request) {
       color: color ? { equals: color, mode: "insensitive" } : undefined,
       clarity: clarity ? { equals: clarity, mode: "insensitive" } : undefined,
       giaCertified: certification === "GIA" ? true : certification === "NONGIA" ? false : undefined,
+      stage: validStage,
     },
     orderBy: { name: "asc" },
     include: { lot: true },
@@ -37,6 +43,7 @@ export async function GET(request: Request) {
       "Name",
       "Location",
       "Lot",
+      "Stage",
       "Certification",
       "Carat Weight",
       "Color",
@@ -54,6 +61,7 @@ export async function GET(request: Request) {
       p.name,
       p.location ?? "",
       p.lot?.lotNumber ?? "",
+      STAGE_LABELS[p.stage] ?? p.stage,
       p.giaCertified ? "GIA" : "No GIA",
       p.caratWeight ?? "",
       p.color ?? "",
