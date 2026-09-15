@@ -86,12 +86,13 @@ enum ExpenseCategory {
 }
 
 model Lot {
-  id          String    @id @default(cuid())
-  lotNumber   String    @unique
-  roughWeight Float?
-  description String?
-  status      LotStatus @default(ROUGH)
-  createdAt   DateTime  @default(now())
+  id             String    @id @default(cuid())
+  lotNumber      String    @unique
+  roughWeight    Float?
+  polishedWeight Float?
+  description    String?
+  status         LotStatus @default(ROUGH)
+  createdAt      DateTime  @default(now())
 
   products Product[]
   expenses LotExpense[]

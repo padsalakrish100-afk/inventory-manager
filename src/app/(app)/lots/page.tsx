@@ -56,6 +56,7 @@ export default async function LotsPage() {
               <th className="px-4 py-3 font-medium">Lot number</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Rough weight</th>
+              <th className="px-4 py-3 font-medium">Yield</th>
               <th className="px-4 py-3 font-medium">SKUs produced</th>
               <th className="px-4 py-3 font-medium">Total expenses</th>
             </tr>
@@ -63,7 +64,7 @@ export default async function LotsPage() {
           <tbody>
             {lots.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
                   No lots yet.{" "}
                   <Link href="/lots/new" className="underline">
                     Create your first lot
@@ -74,6 +75,10 @@ export default async function LotsPage() {
             )}
             {lots.map((lot) => {
               const totalExpense = lot.expenses.reduce((sum, e) => sum + e.amount, 0);
+              const yieldPct =
+                lot.roughWeight && lot.roughWeight > 0 && lot.polishedWeight !== null
+                  ? (lot.polishedWeight / lot.roughWeight) * 100
+                  : null;
               return (
                 <tr key={lot.id} className="border-b border-zinc-100 last:border-0">
                   <td className="px-4 py-3">
@@ -88,6 +93,9 @@ export default async function LotsPage() {
                   </td>
                   <td className="px-4 py-3 text-zinc-500">
                     {lot.roughWeight !== null ? `${lot.roughWeight} ct` : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-500">
+                    {yieldPct !== null ? `${yieldPct.toFixed(1)}%` : "—"}
                   </td>
                   <td className="px-4 py-3 text-zinc-800">{lot.products.length}</td>
                   <td className="px-4 py-3 text-zinc-800">{formatCurrency(totalExpense)}</td>

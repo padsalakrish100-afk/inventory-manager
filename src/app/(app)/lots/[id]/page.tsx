@@ -2,11 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
+import { computeAllocationPreview } from "@/lib/lot-allocation";
 import { updateLot } from "../actions";
 import { LotForm } from "../lot-form";
 import { ExpenseForm } from "./expense-form";
 import { DeleteExpenseButton } from "./delete-expense-button";
 import { DeleteLotButton } from "./delete-lot-button";
+import { AllocateButton } from "./allocate-button";
+import { GenerateStonesForm } from "./generate-stones-form";
 
 const categoryLabel: Record<string, string> = {
   ROUGH_PURCHASE: "Rough purchase",
@@ -31,6 +34,15 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
   const totalExpense = lot.expenses.reduce((sum, e) => sum + e.amount, 0);
   const stockValue = lot.products.reduce((sum, p) => sum + p.stock * p.costPrice, 0);
   const boundUpdateLot = updateLot.bind(null, lot.id);
+  const allocation = computeAllocationPreview(totalExpense, lot.products);
+
+  const yieldPct =
+    lot.roughWeight && lot.roughWeight > 0 && lot.polishedWeight !== null
+      ? (lot.polishedWeight / lot.roughWeight) * 100
+      : null;
+
+  const PRODUCT_DISPLAY_LIMIT = 100;
+  const displayedProducts = lot.products.slice(0, PRODUCT_DISPLAY_LIMIT);
 
   return (
     <div className="flex flex-col gap-8">
@@ -44,13 +56,21 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
         <DeleteLotButton lotId={lot.id} />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Total expenses" value={formatCurrency(totalExpense)} />
         <StatCard label="SKUs produced" value={String(lot.products.length)} />
         <StatCard label="Current stock value" value={formatCurrency(stockValue)} />
+        <StatCard
+          label="Yield (polished / rough)"
+          value={
+            yieldPct !== null
+              ? `${lot.polishedWeight} / ${lot.roughWeight} ct (${yieldPct.toFixed(1)}%)`
+              : "—"
+          }
+        />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <section className="rounded-lg border border-zinc-200 bg-white p-5">
           <h2 className="font-medium text-zinc-900">Lot details</h2>
           <div className="mt-4">
@@ -61,6 +81,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
               defaultValues={{
                 lotNumber: lot.lotNumber,
                 roughWeight: lot.roughWeight,
+                polishedWeight: lot.polishedWeight,
                 description: lot.description,
                 status: lot.status,
               }}
@@ -72,6 +93,17 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
           <h2 className="font-medium text-zinc-900">Add expense</h2>
           <div className="mt-4">
             <ExpenseForm lotId={lot.id} />
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-zinc-200 bg-white p-5">
+          <h2 className="font-medium text-zinc-900">Generate stones</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Give each individual stone from this lot its own SKU, so cost allocation and stock
+            tracking work per stone rather than as one batch.
+          </p>
+          <div className="mt-4">
+            <GenerateStonesForm lotId={lot.id} />
           </div>
         </section>
       </div>
@@ -127,9 +159,57 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
       </section>
 
       <section className="rounded-lg border border-zinc-200 bg-white">
+        <div className={`flex flex-wrap items-start justify-between gap-3 px-5 pt-5 ${allocation ? "" : "pb-5"}`}>
+          <div>
+            <h2 className="font-medium text-zinc-900">Cost allocation</h2>
+            <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+              {allocation
+                ? `Splits the ₹${totalExpense.toLocaleString("en-IN")} in expenses above across every SKU from this lot, by ${allocation.basis === "carat" ? "each SKU's share of total carats" : "each SKU's share of total units (set carat weight on every SKU to allocate by carat instead)"}. Applying it overwrites each SKU's cost price with its allocated amount per unit.`
+                : "Link at least one SKU with stock greater than zero to this lot to allocate its expenses."}
+            </p>
+          </div>
+          {allocation && <AllocateButton lotId={lot.id} />}
+        </div>
+
+        {allocation && (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
+                <tr>
+                  <th className="px-5 py-3 font-medium">SKU</th>
+                  <th className="px-5 py-3 font-medium">Name</th>
+                  <th className="px-5 py-3 font-medium">Share</th>
+                  <th className="px-5 py-3 font-medium">Allocated</th>
+                  <th className="px-5 py-3 font-medium">New cost / unit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allocation.rows.slice(0, PRODUCT_DISPLAY_LIMIT).map((row) => (
+                  <tr key={row.productId} className="border-b border-zinc-100 last:border-0">
+                    <td className="px-5 py-3 font-mono text-xs text-zinc-500">{row.sku}</td>
+                    <td className="px-5 py-3 text-zinc-900">{row.name}</td>
+                    <td className="px-5 py-3 text-zinc-500">{(row.share * 100).toFixed(1)}%</td>
+                    <td className="px-5 py-3 text-zinc-800">{formatCurrency(row.allocated)}</td>
+                    <td className="px-5 py-3 font-medium text-zinc-900">{formatCurrency(row.costPerUnit)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {allocation.rows.length > PRODUCT_DISPLAY_LIMIT && (
+              <p className="px-5 py-3 text-xs text-zinc-500">
+                Showing the first {PRODUCT_DISPLAY_LIMIT} of {allocation.rows.length} SKUs &mdash;
+                applying the allocation still updates every one of them.
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 bg-white">
         <h2 className="px-5 pt-5 font-medium text-zinc-900">SKUs from this lot</h2>
         <p className="px-5 pb-1 text-sm text-zinc-500">
-          Link a product to this lot from the product's edit page.
+          Generate stones above for individual pieces, or link an existing product to this lot
+          from the product's edit page.
         </p>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -149,7 +229,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
                   </td>
                 </tr>
               )}
-              {lot.products.map((p) => (
+              {displayedProducts.map((p) => (
                 <tr key={p.id} className="border-b border-zinc-100 last:border-0">
                   <td className="px-5 py-3 font-mono text-xs text-zinc-500">{p.sku}</td>
                   <td className="px-5 py-3">
@@ -165,6 +245,12 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
               ))}
             </tbody>
           </table>
+          {lot.products.length > PRODUCT_DISPLAY_LIMIT && (
+            <p className="px-5 py-3 text-xs text-zinc-500">
+              Showing the first {PRODUCT_DISPLAY_LIMIT} of {lot.products.length} SKUs &mdash; export
+              Products to CSV to see the rest.
+            </p>
+          )}
         </div>
       </section>
     </div>

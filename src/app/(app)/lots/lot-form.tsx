@@ -17,6 +17,7 @@ export function LotForm({
   defaultValues?: {
     lotNumber: string;
     roughWeight: number | null;
+    polishedWeight: number | null;
     description: string | null;
     status: string;
   };
@@ -60,6 +61,22 @@ export function LotForm({
           min={0}
           step="0.01"
           defaultValue={defaultValues?.roughWeight ?? undefined}
+          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="polishedWeight" className="block text-sm font-medium text-zinc-700">
+          Polished weight (carat)
+        </label>
+        <input
+          id="polishedWeight"
+          name="polishedWeight"
+          type="number"
+          min={0}
+          step="0.01"
+          defaultValue={defaultValues?.polishedWeight ?? undefined}
+          placeholder="Total carats across all polished stones"
           className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
         />
       </div>
