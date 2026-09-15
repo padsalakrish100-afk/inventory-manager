@@ -154,6 +154,9 @@ export async function generateStones(
   const caratRaw = String(formData.get("caratWeight") ?? "").trim();
   const caratWeight = caratRaw ? Number(caratRaw) : null;
   const unit = String(formData.get("unit") ?? "pcs").trim() || "pcs";
+  const tracking = String(formData.get("tracking") ?? "individual");
+  const certification = String(formData.get("certification") ?? "NONGIA");
+  const giaCertified = tracking === "loose" ? false : certification === "GIA";
 
   if (!Number.isInteger(count) || count < 1 || count > 2000) {
     return { error: "Number of stones must be between 1 and 2000." };
@@ -162,9 +165,35 @@ export async function generateStones(
   if (caratWeight !== null && (!Number.isFinite(caratWeight) || caratWeight < 0)) {
     return { error: "Carat weight must be a non-negative number." };
   }
+  if (tracking !== "individual" && tracking !== "loose") {
+    return { error: "Invalid tracking mode." };
+  }
 
   const lot = await prisma.lot.findUnique({ where: { id: lotId } });
   if (!lot) return { error: "Lot not found." };
+
+  if (tracking === "loose") {
+    const existingLoose = await prisma.product.findMany({
+      where: { lotId, sku: { startsWith: `${lot.lotNumber}-LOOSE` } },
+      select: { sku: true },
+    });
+    const usedIndexes = existingLoose
+      .map((p) => Number(p.sku.slice(`${lot.lotNumber}-LOOSE-`.length)))
+      .filter((n) => Number.isInteger(n));
+    const nextIndex = usedIndexes.length > 0 ? Math.max(...usedIndexes) + 1 : 1;
+    const sku =
+      existingLoose.length === 0 ? `${lot.lotNumber}-LOOSE` : `${lot.lotNumber}-LOOSE-${nextIndex}`;
+
+    await prisma.product.create({
+      data: { sku, name: namePrefix, unit, stock: count, caratWeight, giaCertified, lotId },
+    });
+
+    revalidatePath(`/lots/${lotId}`);
+    revalidatePath("/products");
+    revalidatePath("/dashboard");
+
+    return { created: 1 };
+  }
 
   const existing = await prisma.product.findMany({
     where: { lotId, sku: { startsWith: `${lot.lotNumber}-` } },
@@ -184,6 +213,7 @@ export async function generateStones(
       unit,
       stock: 1,
       caratWeight,
+      giaCertified,
       lotId,
     };
   });

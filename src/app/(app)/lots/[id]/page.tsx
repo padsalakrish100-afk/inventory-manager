@@ -97,10 +97,11 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
         </section>
 
         <section className="rounded-lg border border-zinc-200 bg-white p-5">
-          <h2 className="font-medium text-zinc-900">Generate stones</h2>
+          <h2 className="font-medium text-zinc-900">Add polished output</h2>
           <p className="mt-1 text-sm text-zinc-500">
-            Give each individual stone from this lot its own SKU, so cost allocation and stock
-            tracking work per stone rather than as one batch.
+            Split what this lot produced into GIA singles, non-GIA singles, and a loose parcel
+            &mdash; run this once per group. Individually-tracked stones each get their own SKU;
+            a loose parcel becomes one SKU with the pieces as its stock.
           </p>
           <div className="mt-4">
             <GenerateStonesForm lotId={lot.id} />
