@@ -5,6 +5,7 @@ import { STAGE_LABELS, STAGE_STYLES } from "@/lib/stages";
 import { updateProduct, deleteProcessLog } from "../actions";
 import { ProductForm } from "../product-form";
 import { ProcessLogForm } from "./process-log-form";
+import { BarcodeLabel, PrintLabelButton } from "./barcode-label";
 
 export default async function EditProductPage({
   params,
@@ -26,11 +27,22 @@ export default async function EditProductPage({
   const boundAction = updateProduct.bind(null, product.id);
   const boundDeleteLog = deleteProcessLog.bind(null, product.id);
 
+  const processCounts = new Map<string, number>();
+  for (const log of product.processLogs) {
+    processCounts.set(log.stage, (processCounts.get(log.stage) ?? 0) + 1);
+  }
+
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-900">Edit product</h1>
-        <p className="mt-1 text-sm text-zinc-500">{product.name}</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-zinc-900">Edit product</h1>
+          <p className="mt-1 text-sm text-zinc-500">{product.name}</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <BarcodeLabel sku={product.sku} name={product.name} caratWeight={product.caratWeight} />
+          <PrintLabelButton />
+        </div>
       </div>
       <ProductForm
         action={boundAction}
@@ -65,6 +77,20 @@ export default async function EditProductPage({
             moves the SKU's current stage above.
           </p>
         </div>
+
+        {processCounts.size > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {[...processCounts.entries()].map(([stage, count]) => (
+              <span
+                key={stage}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${STAGE_STYLES[stage]}`}
+              >
+                {STAGE_LABELS[stage] ?? stage} × {count}
+                {count > 1 ? " (reworked)" : ""}
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
           <table className="w-full text-left text-sm">

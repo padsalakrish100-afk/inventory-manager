@@ -8,3 +8,26 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-label,
+  .print-label *,
+  .print-labels,
+  .print-labels * {
+    visibility: visible;
+  }
+  .print-label {
+    position: fixed;
+    top: 1cm;
+    left: 1cm;
+  }
+  .print-labels {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+}

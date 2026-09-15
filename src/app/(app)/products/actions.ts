@@ -189,3 +189,21 @@ export async function deleteProcessLog(productId: string, processLogId: string) 
   revalidatePath("/manufacturing");
   revalidatePath("/polish");
 }
+
+// Looks up a stone by the exact SKU encoded in its barcode and opens it —
+// used by the Scan page.
+export async function lookupBySku(
+  _prevState: string | undefined,
+  formData: FormData,
+): Promise<string | undefined> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const sku = String(formData.get("sku") ?? "").trim();
+  if (!sku) return undefined;
+
+  const product = await prisma.product.findUnique({ where: { sku }, select: { id: true } });
+  if (!product) return `No SKU matching "${sku}" found.`;
+
+  redirect(`/products/${product.id}`);
+}

@@ -247,7 +247,17 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
               from the product's edit page.
             </p>
           </div>
-          <BulkStageForm lotId={lot.id} skuCount={lot.products.length} />
+          <div className="flex flex-wrap items-end gap-3">
+            {lot.products.length > 0 && (
+              <Link
+                href={`/lots/${lot.id}/labels`}
+                className="rounded-md border border-zinc-300 px-4 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                Print labels
+              </Link>
+            )}
+            <BulkStageForm lotId={lot.id} skuCount={lot.products.length} />
+          </div>
         </div>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
