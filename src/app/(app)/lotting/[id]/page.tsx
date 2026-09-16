@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { PROCESS_LABELS, PROCESS_STYLES } from "@/lib/process";
 import { DeleteLotButton } from "./delete-lot-button";
+import { WeightCell } from "./weight-cell";
 
 export default async function LotDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -64,7 +65,9 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
             {lot.products.map((p) => (
               <tr key={p.id} className="border-b border-zinc-100 last:border-0">
                 <td className="px-4 py-3 font-mono text-xs text-zinc-500">{p.sku}</td>
-                <td className="px-4 py-3 text-zinc-500">{p.caratWeight ?? "—"}</td>
+                <td className="px-4 py-3">
+                  <WeightCell productId={p.id} initialWeight={p.caratWeight} />
+                </td>
                 <td className="px-4 py-3">
                   {p.polishedStone ? (
                     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">

@@ -102,3 +102,25 @@ export async function deleteLot(lotId: string) {
   revalidatePath("/lotting");
   revalidatePath("/manufacturing/reports");
 }
+
+// Saves one stone's weight from the inline field on the lot detail page —
+// used right after lotting to record actual per-stone weights as they're
+// known, without having to wait until the stone moves through manufacturing.
+export async function updateStoneWeight(productId: string, weightRaw: string): Promise<{ error?: string }> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const trimmed = weightRaw.trim();
+  const weight = trimmed ? Number(trimmed) : null;
+  if (weight !== null && (!Number.isFinite(weight) || weight < 0)) {
+    return { error: "Weight must be a non-negative number." };
+  }
+
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { lotId: true } });
+  if (!product) return { error: "Stone not found." };
+
+  await prisma.product.update({ where: { id: productId }, data: { caratWeight: weight } });
+
+  if (product.lotId) revalidatePath(`/lotting/${product.lotId}`);
+  return {};
+}
