@@ -2,7 +2,7 @@
 
 import { Fragment, useRef, useState, useTransition } from "react";
 import { returnStones } from "../actions";
-import { PROCESS_LABELS } from "@/lib/process";
+import { PROCESS_LABELS, SAWING_PROCESS_VALUES } from "@/lib/process";
 
 type StoneInfo = {
   sku: string;
@@ -18,7 +18,8 @@ function sumTops(entries: string[]): number {
 }
 
 function recomputeWeightFromTops(row: StoneInfo): StoneInfo {
-  if (row.process !== "LASER_SAWING" || row.topsEntries.length === 0 || row.startingWeight === null) return row;
+  const isSawing = row.process && (SAWING_PROCESS_VALUES as readonly string[]).includes(row.process);
+  if (!isSawing || row.topsEntries.length === 0 || row.startingWeight === null) return row;
   const remaining = row.startingWeight - sumTops(row.topsEntries);
   return { ...row, weight: (remaining >= 0 ? remaining : 0).toFixed(2) };
 }
@@ -187,10 +188,10 @@ export function ReturnForm() {
               </tr>
             )}
             {rows.map((r, i) => {
-              const isLaserSawing = r.process === "LASER_SAWING";
+              const isSawing = r.process ? (SAWING_PROCESS_VALUES as readonly string[]).includes(r.process) : false;
               return (
                 <Fragment key={r.sku}>
-                  <tr className={isLaserSawing ? "border-b-0" : "border-b border-zinc-100 last:border-0"}>
+                  <tr className={isSawing ? "border-b-0" : "border-b border-zinc-100 last:border-0"}>
                     <td className="px-4 py-2 text-zinc-500">{i + 1}</td>
                     <td className="px-4 py-2 font-mono text-xs text-zinc-800">{r.sku}</td>
                     <td className="px-4 py-2 text-zinc-500">
@@ -217,7 +218,7 @@ export function ReturnForm() {
                       </button>
                     </td>
                   </tr>
-                  {isLaserSawing && (
+                  {isSawing && (
                     <tr className="border-b border-zinc-100 last:border-0 bg-blue-50">
                       <td></td>
                       <td colSpan={4} className="px-4 pb-3">
