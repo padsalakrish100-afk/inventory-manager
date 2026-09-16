@@ -73,13 +73,27 @@ export async function deleteLot(lotId: string) {
 
   const lot = await prisma.lot.findUnique({
     where: { id: lotId },
-    include: { products: { include: { polishedStone: true, _count: { select: { movements: true } } } } },
+    include: {
+      products: {
+        include: {
+          polishedStone: true,
+          _count: { select: { movements: true, transactions: true, processLogs: true } },
+        },
+      },
+    },
   });
   if (!lot) throw new Error("Lot not found.");
 
   const hasHistory = lot.products.some((p) => p.polishedStone || p._count.movements > 0);
   if (hasHistory) {
     throw new Error("This lot has stones with manufacturing history — can't delete it.");
+  }
+
+  const hasLegacyRecords = lot.products.some((p) => p._count.transactions > 0 || p._count.processLogs > 0);
+  if (hasLegacyRecords) {
+    throw new Error(
+      "This lot has stones with recorded transaction history from before this app was rebuilt — can't delete it.",
+    );
   }
 
   await prisma.product.deleteMany({ where: { lotId } });

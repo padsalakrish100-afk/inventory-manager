@@ -307,11 +307,19 @@ export async function deleteStone(productId: string) {
 
   const product = await prisma.product.findUnique({
     where: { id: productId },
-    include: { polishedStone: true, _count: { select: { movements: true } } },
+    include: {
+      polishedStone: true,
+      _count: { select: { movements: true, transactions: true, processLogs: true } },
+    },
   });
   if (!product) throw new Error("Stone not found.");
   if (product.polishedStone) throw new Error("This stone has already been transferred to Polish — can't delete it.");
   if (product._count.movements > 0) throw new Error("This stone has movement history — can't delete it.");
+  if (product._count.transactions > 0 || product._count.processLogs > 0) {
+    throw new Error(
+      "This stone has recorded transaction history from before this app was rebuilt — can't delete it.",
+    );
+  }
 
   const lotId = product.lotId;
   await prisma.product.delete({ where: { id: productId } });
