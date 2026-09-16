@@ -8,6 +8,7 @@ import {
   daysInStock,
 } from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
+import { ExportButtons } from "@/components/export-buttons";
 import type { PolishStatus } from "@/generated/prisma/client";
 
 export default async function PolishPage({
@@ -48,12 +49,15 @@ export default async function PolishPage({
           <h1 className="text-2xl font-semibold text-zinc-900">Polish</h1>
           <p className="mt-1 text-sm text-zinc-500">Finished stones, each with its own Stock ID.</p>
         </div>
-        <Link
-          href="/polish/summary"
-          className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-        >
-          Summary
-        </Link>
+        <div className="flex items-center gap-3">
+          <ExportButtons report="polish" params={status ? new URLSearchParams({ status }) : undefined} />
+          <Link
+            href="/polish/summary"
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+          >
+            Summary
+          </Link>
+        </div>
       </div>
 
       <form className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4">

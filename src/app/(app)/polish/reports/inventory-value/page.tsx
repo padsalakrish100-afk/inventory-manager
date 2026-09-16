@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { POLISH_STATUS_OPTIONS, POLISH_STATUS_LABELS } from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
+import { ExportButtons } from "@/components/export-buttons";
 
 export default async function InventoryValueReportPage() {
   const stones = await prisma.polishedStone.findMany();
@@ -28,9 +29,12 @@ export default async function InventoryValueReportPage() {
             Total value by status — asking price for unsold stones, sold price for sold ones.
           </p>
         </div>
-        <Link href="/polish/summary" className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
-          Back to summary
-        </Link>
+        <div className="flex items-center gap-3">
+          <ExportButtons report="polish-inventory-value" />
+          <Link href="/polish/summary" className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+            Back to summary
+          </Link>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">

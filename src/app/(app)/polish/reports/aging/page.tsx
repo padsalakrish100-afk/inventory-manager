@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { POLISH_STATUS_LABELS, POLISH_STATUS_STYLES, daysInStock } from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
+import { ExportButtons } from "@/components/export-buttons";
 
 export default async function StockAgingReportPage() {
   const stones = await prisma.polishedStone.findMany({
@@ -19,9 +20,12 @@ export default async function StockAgingReportPage() {
           <h1 className="text-2xl font-semibold text-zinc-900">Stock aging</h1>
           <p className="mt-1 text-sm text-zinc-500">Every unsold stone, oldest first.</p>
         </div>
-        <Link href="/polish/summary" className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
-          Back to summary
-        </Link>
+        <div className="flex items-center gap-3">
+          <ExportButtons report="polish-aging" />
+          <Link href="/polish/summary" className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+            Back to summary
+          </Link>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">

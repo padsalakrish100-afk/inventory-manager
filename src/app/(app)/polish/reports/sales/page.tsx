@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { PAYMENT_STATUS_LABELS, PAYMENT_STATUS_STYLES, computeTotalCost } from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
+import { ExportButtons } from "@/components/export-buttons";
 
 export default async function SalesReportPage({
   searchParams,
@@ -57,6 +58,10 @@ export default async function SalesReportPage({
   }
 
   const hasFilters = Boolean(from || to || buyerId);
+  const exportParams = new URLSearchParams();
+  if (from) exportParams.set("from", from);
+  if (to) exportParams.set("to", to);
+  if (buyerId) exportParams.set("buyerId", buyerId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -65,9 +70,12 @@ export default async function SalesReportPage({
           <h1 className="text-2xl font-semibold text-zinc-900">Sales report</h1>
           <p className="mt-1 text-sm text-zinc-500">Sold stones, revenue, and margin.</p>
         </div>
-        <Link href="/polish/summary" className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
-          Back to summary
-        </Link>
+        <div className="flex items-center gap-3">
+          <ExportButtons report="polish-sales" params={exportParams} />
+          <Link href="/polish/summary" className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+            Back to summary
+          </Link>
+        </div>
       </div>
 
       <form className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4">

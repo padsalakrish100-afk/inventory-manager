@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { PROCESS_LABELS, PROCESS_STYLES, PROCESS_OPTIONS } from "@/lib/process";
+import { ExportButtons } from "@/components/export-buttons";
 
 export default async function ManufacturingReportsPage({
   searchParams,
@@ -64,9 +65,15 @@ export default async function ManufacturingReportsPage({
 
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-900">Manufacturing reports</h1>
-        <p className="mt-1 text-sm text-zinc-500">Whole-lot summary and every stone's own detail.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-zinc-900">Manufacturing reports</h1>
+          <p className="mt-1 text-sm text-zinc-500">Whole-lot summary and every stone's own detail.</p>
+        </div>
+        <ExportButtons
+          report="manufacturing-reports"
+          params={reworkedOnly ? new URLSearchParams({ reworkedOnly }) : undefined}
+        />
       </div>
 
       <section className="flex flex-col gap-3">

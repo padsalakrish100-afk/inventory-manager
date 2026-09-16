@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { ExportButtons } from "@/components/export-buttons";
 
 export default async function LottingPage() {
   const lots = await prisma.lot.findMany({
@@ -14,12 +15,15 @@ export default async function LottingPage() {
           <h1 className="text-2xl font-semibold text-zinc-900">Lotting</h1>
           <p className="mt-1 text-sm text-zinc-500">Rough batches, numbered as soon as they come in.</p>
         </div>
-        <Link
-          href="/lotting/new"
-          className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110"
-        >
-          New lot
-        </Link>
+        <div className="flex items-center gap-3">
+          <ExportButtons report="lotting" />
+          <Link
+            href="/lotting/new"
+            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110"
+          >
+            New lot
+          </Link>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
