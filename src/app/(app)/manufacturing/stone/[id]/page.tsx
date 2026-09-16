@@ -111,13 +111,14 @@ export default async function StoneDetailPage({ params }: { params: Promise<{ id
                 <th className="px-4 py-3 font-medium">Labor cost</th>
                 <th className="px-4 py-3 font-medium">Returned</th>
                 <th className="px-4 py-3 font-medium">Return wt.</th>
+                <th className="px-4 py-3 font-medium">Tops wt.</th>
                 <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
               {stone.movements.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-zinc-500">
+                  <td colSpan={9} className="px-4 py-6 text-center text-zinc-500">
                     Never issued yet.
                   </td>
                 </tr>
@@ -140,6 +141,7 @@ export default async function StoneDetailPage({ params }: { params: Promise<{ id
                     {m.returnDate ? m.returnDate.toLocaleDateString() : "Not returned yet"}
                   </td>
                   <td className="px-4 py-3 text-zinc-500">{m.returnWeight ?? "—"}</td>
+                  <td className="px-4 py-3 text-zinc-500">{m.topsWeight ?? "—"}</td>
                   <td className="px-4 py-3">
                     <UndoMovementButton movementId={m.id} productId={stone.id} />
                   </td>

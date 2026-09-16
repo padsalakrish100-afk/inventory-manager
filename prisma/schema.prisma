@@ -120,6 +120,11 @@ model ProcessMovement {
   // rewrites what a past movement actually cost.
   laborCost Float?
 
+  // Total weight of cut-off pieces ("tops") removed during this movement —
+  // set on return, mainly for Laser Sawing where a stone can be cut from
+  // several angles before its final weight is known.
+  topsWeight Float?
+
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   productId String
 

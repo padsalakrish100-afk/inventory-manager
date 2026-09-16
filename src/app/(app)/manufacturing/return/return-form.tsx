@@ -1,10 +1,27 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { Fragment, useRef, useState, useTransition } from "react";
 import { returnStones } from "../actions";
 import { PROCESS_LABELS } from "@/lib/process";
 
-type StoneInfo = { sku: string; weight: string; process?: string; party?: string };
+type StoneInfo = {
+  sku: string;
+  weight: string;
+  process?: string;
+  party?: string;
+  startingWeight: number | null;
+  topsEntries: string[];
+};
+
+function sumTops(entries: string[]): number {
+  return entries.reduce((sum, e) => sum + (Number(e) || 0), 0);
+}
+
+function recomputeWeightFromTops(row: StoneInfo): StoneInfo {
+  if (row.process !== "LASER_SAWING" || row.topsEntries.length === 0 || row.startingWeight === null) return row;
+  const remaining = row.startingWeight - sumTops(row.topsEntries);
+  return { ...row, weight: (remaining >= 0 ? remaining : 0).toFixed(2) };
+}
 
 export function ReturnForm() {
   const [rows, setRows] = useState<StoneInfo[]>([]);
@@ -29,10 +46,11 @@ export function ReturnForm() {
       return;
     }
     const info = await res.json();
-    const weight = info.caratWeight !== null && info.caratWeight !== undefined ? String(info.caratWeight) : "";
+    const startingWeight = info.caratWeight !== null && info.caratWeight !== undefined ? Number(info.caratWeight) : null;
+    const weight = startingWeight !== null ? String(startingWeight) : "";
     setRows((prev) => [
       ...prev,
-      { sku, weight, process: info.process, party: info.party },
+      { sku, weight, process: info.process, party: info.party, startingWeight, topsEntries: [] },
     ]);
   }
 
@@ -44,13 +62,50 @@ export function ReturnForm() {
     setRows((prev) => prev.map((r) => (r.sku === sku ? { ...r, weight } : r)));
   }
 
+  function addTopsEntry(sku: string) {
+    setRows((prev) =>
+      prev.map((r) => (r.sku === sku ? recomputeWeightFromTops({ ...r, topsEntries: [...r.topsEntries, ""] }) : r)),
+    );
+  }
+
+  function updateTopsEntry(sku: string, index: number, value: string) {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.sku === sku
+          ? recomputeWeightFromTops({
+              ...r,
+              topsEntries: r.topsEntries.map((v, i) => (i === index ? value : v)),
+            })
+          : r,
+      ),
+    );
+  }
+
+  function removeTopsEntry(sku: string, index: number) {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.sku === sku
+          ? recomputeWeightFromTops({ ...r, topsEntries: r.topsEntries.filter((_, i) => i !== index) })
+          : r,
+      ),
+    );
+  }
+
   function submit(formData: FormData) {
     setError(null);
     setMessage(null);
     const date = String(formData.get("date") ?? today);
     const notes = String(formData.get("notes") ?? "");
     startTransition(async () => {
-      const result = await returnStones({ date, notes, stones: rows });
+      const result = await returnStones({
+        date,
+        notes,
+        stones: rows.map((r) => ({
+          sku: r.sku,
+          weight: r.weight,
+          topsWeight: r.topsEntries.length > 0 ? String(sumTops(r.topsEntries)) : undefined,
+        })),
+      });
       if (result.error) {
         setError(result.error);
         return;
@@ -131,35 +186,86 @@ export function ReturnForm() {
                 </td>
               </tr>
             )}
-            {rows.map((r, i) => (
-              <tr key={r.sku} className="border-b border-zinc-100 last:border-0">
-                <td className="px-4 py-2 text-zinc-500">{i + 1}</td>
-                <td className="px-4 py-2 font-mono text-xs text-zinc-800">{r.sku}</td>
-                <td className="px-4 py-2 text-zinc-500">
-                  {r.process ? PROCESS_LABELS[r.process] ?? r.process : "—"}
-                  {r.party ? ` · ${r.party}` : ""}
-                </td>
-                <td className="px-4 py-2">
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={r.weight}
-                    onChange={(e) => updateWeight(r.sku, e.target.value)}
-                    className="w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm"
-                  />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => removeRow(r.sku)}
-                    className="text-zinc-400 hover:text-red-600 hover:underline"
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const isLaserSawing = r.process === "LASER_SAWING";
+              return (
+                <Fragment key={r.sku}>
+                  <tr className={isLaserSawing ? "border-b-0" : "border-b border-zinc-100 last:border-0"}>
+                    <td className="px-4 py-2 text-zinc-500">{i + 1}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-zinc-800">{r.sku}</td>
+                    <td className="px-4 py-2 text-zinc-500">
+                      {r.process ? PROCESS_LABELS[r.process] ?? r.process : "—"}
+                      {r.party ? ` · ${r.party}` : ""}
+                    </td>
+                    <td className="px-4 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={r.weight}
+                        onChange={(e) => updateWeight(r.sku, e.target.value)}
+                        className="w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => removeRow(r.sku)}
+                        className="text-zinc-400 hover:text-red-600 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                  {isLaserSawing && (
+                    <tr className="border-b border-zinc-100 last:border-0 bg-blue-50">
+                      <td></td>
+                      <td colSpan={4} className="px-4 pb-3">
+                        <p className="text-xs font-medium text-blue-700">
+                          Tops removed (cut pieces) — starting weight {r.startingWeight ?? "—"} ct
+                        </p>
+                        <div className="mt-1 flex flex-col gap-1.5">
+                          {r.topsEntries.map((v, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <span className="w-14 text-xs text-blue-700">Cut {idx + 1}</span>
+                              <input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={v}
+                                onChange={(e) => updateTopsEntry(r.sku, idx, e.target.value)}
+                                placeholder="ct"
+                                className="w-24 rounded-md border border-blue-300 px-2 py-1 text-sm"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeTopsEntry(r.sku, idx)}
+                                className="text-xs text-blue-400 hover:text-red-600 hover:underline"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => addTopsEntry(r.sku)}
+                            className="mt-1 w-fit rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100"
+                          >
+                            + Add tops weight
+                          </button>
+                          {r.topsEntries.length > 0 && (
+                            <p className="mt-1 text-xs text-blue-700">
+                              {r.startingWeight ?? 0} ct − {sumTops(r.topsEntries).toFixed(2)} ct tops ={" "}
+                              <span className="font-medium">{r.weight} ct final</span>
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

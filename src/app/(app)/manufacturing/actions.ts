@@ -123,7 +123,7 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
 export type ReturnInput = {
   date: string;
   notes: string;
-  stones: { sku: string; weight: string }[];
+  stones: { sku: string; weight: string; topsWeight?: string }[];
 };
 
 export type ReturnResult = { error?: string; returned?: number };
@@ -155,6 +155,8 @@ export async function returnStones(input: ReturnInput): Promise<ReturnResult> {
   for (const s of stoneInputs) {
     const product = bySku.get(s.sku.trim())!;
     const weight = s.weight.trim() ? Number(s.weight) : null;
+    const topsWeightRaw = s.topsWeight?.trim();
+    const topsWeight = topsWeightRaw ? Number(topsWeightRaw) : null;
 
     const openMovement = await prisma.processMovement.findFirst({
       where: { productId: product.id, returnDate: null },
@@ -168,6 +170,7 @@ export async function returnStones(input: ReturnInput): Promise<ReturnResult> {
         data: {
           returnDate: date,
           returnWeight: Number.isFinite(weight) ? weight : null,
+          topsWeight: topsWeight !== null && Number.isFinite(topsWeight) ? topsWeight : null,
           notes: notes ?? openMovement.notes,
         },
       }),
