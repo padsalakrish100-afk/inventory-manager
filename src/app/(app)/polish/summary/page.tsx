@@ -63,6 +63,27 @@ export default async function PolishSummaryPage() {
       </div>
 
       <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold text-zinc-900">Reports</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <ReportCard
+            href="/polish/reports/aging"
+            title="Stock aging"
+            description="Every unsold stone, oldest first."
+          />
+          <ReportCard
+            href="/polish/reports/inventory-value"
+            title="Inventory value summary"
+            description="Total value grouped by status."
+          />
+          <ReportCard
+            href="/polish/reports/sales"
+            title="Sales report"
+            description="Sold stones by date range and buyer, with revenue and margin."
+          />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold text-zinc-900">Oldest unsold stones</h2>
         <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
           <table className="w-full text-left text-sm">
@@ -114,5 +135,17 @@ function StatCard({ label, value }: { label: string; value: string }) {
       <p className="text-sm text-zinc-500">{label}</p>
       <p className="mt-1 text-xl font-semibold text-zinc-900">{value}</p>
     </div>
+  );
+}
+
+function ReportCard({ href, title, description }: { href: string; title: string; description: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-lg border border-zinc-200 bg-white p-5 transition hover:border-zinc-300 hover:bg-zinc-50"
+    >
+      <p className="font-medium text-zinc-900">{title}</p>
+      <p className="mt-1 text-sm text-zinc-500">{description}</p>
+    </Link>
   );
 }

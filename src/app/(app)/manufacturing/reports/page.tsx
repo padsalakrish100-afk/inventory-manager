@@ -88,6 +88,60 @@ export default async function ManufacturingReportsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold text-zinc-900">Yield by lot</h2>
+        <p className="text-sm text-zinc-500">
+          Total polished weight produced so far against the lot's rough weight — a rough sense of
+          manufacturing efficiency. Yield only grows as more of the lot's stones reach Polish.
+        </p>
+        <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Lot</th>
+                <th className="px-4 py-3 font-medium">Rough weight</th>
+                <th className="px-4 py-3 font-medium">Polished weight</th>
+                <th className="px-4 py-3 font-medium">Stones polished</th>
+                <th className="px-4 py-3 font-medium">Yield</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lots.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
+                    No lots yet.
+                  </td>
+                </tr>
+              )}
+              {lots.map((lot) => {
+                const polishedStones = lot.products.filter((p) => p.polishedStone);
+                const polishedWeight = polishedStones.reduce(
+                  (sum, p) => sum + (p.polishedStone?.caratWeight ?? 0),
+                  0,
+                );
+                const yieldPct =
+                  lot.roughWeight && lot.roughWeight > 0 ? (polishedWeight / lot.roughWeight) * 100 : null;
+                return (
+                  <tr key={lot.id} className="border-b border-zinc-100 last:border-0">
+                    <td className="px-4 py-3">
+                      <Link href={`/lotting/${lot.id}`} className="font-medium text-zinc-900 hover:underline">
+                        {lot.lotNumber}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-500">{lot.roughWeight ?? "—"} ct</td>
+                    <td className="px-4 py-3 text-zinc-500">{polishedWeight.toFixed(2)} ct</td>
+                    <td className="px-4 py-3 text-zinc-800">{polishedStones.length}</td>
+                    <td className="px-4 py-3 font-medium text-zinc-900">
+                      {yieldPct !== null ? `${yieldPct.toFixed(1)}%` : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-900">Every stone</h2>
           <span className="text-sm text-zinc-500">
