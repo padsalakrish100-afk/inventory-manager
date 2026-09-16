@@ -22,6 +22,14 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
   const availableCount = lot.products.filter((p) => !p.currentProcess && !p.polishedStone).length;
   const polishedCount = lot.products.filter((p) => p.polishedStone).length;
 
+  const weighedStones = lot.products.filter((p) => p.caratWeight !== null);
+  const enteredTotal = Math.round(weighedStones.reduce((sum, p) => sum + (p.caratWeight ?? 0), 0) * 100) / 100;
+  const allWeighed = weighedStones.length === lot.products.length && lot.products.length > 0;
+  const showVarianceCheck = lot.roughWeight !== null && weighedStones.length > 0;
+  const diff = showVarianceCheck ? Math.round((enteredTotal - lot.roughWeight!) * 100) / 100 : 0;
+  const diffPercent = showVarianceCheck && lot.roughWeight ? (diff / lot.roughWeight) * 100 : 0;
+  const flagged = showVarianceCheck && allWeighed && Math.abs(diffPercent) > 2;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between">
@@ -50,6 +58,28 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
         <StatCard label="Available (not issued)" value={String(availableCount)} />
         <StatCard label="Transferred to Polish" value={String(polishedCount)} />
       </div>
+
+      {showVarianceCheck && (
+        <div
+          className={`rounded-lg border p-4 text-sm ${
+            flagged ? "border-amber-300 bg-amber-50 text-amber-900" : "border-zinc-200 bg-white text-zinc-600"
+          }`}
+        >
+          <span className="font-medium">{enteredTotal} ct entered</span> ({weighedStones.length} of{" "}
+          {lot.products.length} stone{lot.products.length === 1 ? "" : "s"} weighed)
+          {allWeighed ? (
+            <>
+              {" "}
+              vs {lot.roughWeight} ct rough weight — {diff >= 0 ? "+" : ""}
+              {diff} ct ({diffPercent >= 0 ? "+" : ""}
+              {diffPercent.toFixed(1)}%)
+              {flagged && <span className="ml-2 font-medium">Worth double-checking against the scale.</span>}
+            </>
+          ) : (
+            <span> — variance check runs once every stone has a weight entered.</span>
+          )}
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-left text-sm">
