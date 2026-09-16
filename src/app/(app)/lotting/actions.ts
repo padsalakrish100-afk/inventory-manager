@@ -45,7 +45,7 @@ export async function createLot(
   const sourceParty = await prisma.party.upsert({
     where: { name: sourcePartyName },
     update: {},
-    create: { name: sourcePartyName },
+    create: { name: sourcePartyName, category: "TENDER_VENDOR" },
   });
 
   const lotNumber = await nextLotNumber();

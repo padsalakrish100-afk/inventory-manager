@@ -1,8 +1,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { PROCESS_LABELS, PROCESS_STYLES } from "@/lib/process";
+import { PROCESS_LABELS, PROCESS_STYLES, PROCESS_OPTIONS } from "@/lib/process";
 
-export default async function ManufacturingReportsPage() {
+export default async function ManufacturingReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reworkedOnly?: string; sort?: string }>;
+}) {
+  const { reworkedOnly, sort } = await searchParams;
   const [lots, stones] = await Promise.all([
     prisma.lot.findMany({
       include: {
@@ -31,6 +36,31 @@ export default async function ManufacturingReportsPage() {
   });
 
   const reworkedCount = stoneRows.filter((r) => r.reworked).length;
+
+  // Total "extra" (repeat) instances per process across every stone — e.g.
+  // a stone sent through Chabka 3 times contributes 2 repeats to Chabka.
+  const repeatsByProcess = new Map<string, { repeats: number; stonesAffected: number }>();
+  for (const p of PROCESS_OPTIONS) repeatsByProcess.set(p.value, { repeats: 0, stonesAffected: 0 });
+  for (const { counts } of stoneRows) {
+    for (const [process, count] of counts.entries()) {
+      if (count <= 1) continue;
+      const entry = repeatsByProcess.get(process);
+      if (!entry) continue;
+      entry.repeats += count - 1;
+      entry.stonesAffected += 1;
+    }
+  }
+  const repeatRows = [...repeatsByProcess.entries()].sort(([, a], [, b]) =>
+    sort === "repeatsAsc" ? a.repeats - b.repeats : b.repeats - a.repeats,
+  );
+  const repeatSortParams = new URLSearchParams();
+  if (reworkedOnly) repeatSortParams.set("reworkedOnly", reworkedOnly);
+  repeatSortParams.set("sort", sort === "repeatsDesc" ? "repeatsAsc" : "repeatsDesc");
+
+  const visibleStoneRows = reworkedOnly === "1" ? stoneRows.filter((r) => r.reworked) : stoneRows;
+  const toggleReworkedParams = new URLSearchParams();
+  if (sort) toggleReworkedParams.set("sort", sort);
+  if (reworkedOnly !== "1") toggleReworkedParams.set("reworkedOnly", "1");
 
   return (
     <div className="flex flex-col gap-8">
@@ -142,11 +172,54 @@ export default async function ManufacturingReportsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold text-zinc-900">Repeat count by process</h2>
+        <p className="text-sm text-zinc-500">
+          Total repeat instances per process across every stone — which process causes the most rework.
+        </p>
+        <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Process</th>
+                <th className="px-4 py-3 font-medium">Stones affected</th>
+                <th className="px-4 py-3 font-medium">
+                  <Link href={`/manufacturing/reports?${repeatSortParams}`} className="flex items-center gap-1 hover:text-zinc-900">
+                    Repeat instances
+                    <span className="text-zinc-400">{sort === "repeatsAsc" ? "↑" : "↓"}</span>
+                  </Link>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {repeatRows.map(([process, { repeats, stonesAffected }]) => (
+                <tr key={process} className="border-b border-zinc-100 last:border-0">
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PROCESS_STYLES[process]}`}>
+                      {PROCESS_LABELS[process]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-500">{stonesAffected}</td>
+                  <td className={`px-4 py-3 font-medium ${repeats > 0 ? "text-orange-600" : "text-zinc-500"}`}>
+                    {repeats}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-900">Every stone</h2>
-          <span className="text-sm text-zinc-500">
-            {reworkedCount} of {stoneRows.length} reworked (sent through the same process more than once)
-          </span>
+          <Link
+            href={`/manufacturing/reports?${toggleReworkedParams}`}
+            className="text-sm text-zinc-500 hover:underline"
+          >
+            {reworkedOnly === "1"
+              ? "Showing reworked only — show all"
+              : `${reworkedCount} of ${stoneRows.length} reworked — show reworked only`}
+          </Link>
         </div>
         <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
           <table className="w-full text-left text-sm">
@@ -160,7 +233,14 @@ export default async function ManufacturingReportsPage() {
               </tr>
             </thead>
             <tbody>
-              {stoneRows.map(({ stone, counts, totalMoves, reworked }) => (
+              {visibleStoneRows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
+                    No reworked stones.
+                  </td>
+                </tr>
+              )}
+              {visibleStoneRows.map(({ stone, counts, totalMoves, reworked }) => (
                 <tr key={stone.id} className="border-b border-zinc-100 last:border-0">
                   <td className="px-4 py-3 font-mono text-xs text-zinc-500">{stone.sku}</td>
                   <td className="px-4 py-3 text-zinc-500">

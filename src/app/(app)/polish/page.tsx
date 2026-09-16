@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { POLISH_STATUS_OPTIONS, POLISH_STATUS_LABELS, POLISH_STATUS_STYLES, daysInStock } from "@/lib/polish-status";
+import {
+  POLISH_STATUS_OPTIONS,
+  POLISH_STATUS_LABELS,
+  POLISH_STATUS_STYLES,
+  SALE_TYPE_LABELS,
+  daysInStock,
+} from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
 import type { PolishStatus } from "@/generated/prisma/client";
 
@@ -91,6 +97,7 @@ export default async function PolishPage({
               <th className="px-4 py-3 font-medium">Clarity</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Location</th>
+              <th className="px-4 py-3 font-medium">Sale type</th>
               <th className="px-4 py-3 font-medium">Asking price</th>
               <th className="px-4 py-3 font-medium">
                 <Link href={`/polish?${sortParams}`} className="flex items-center gap-1 hover:text-zinc-900">
@@ -103,7 +110,7 @@ export default async function PolishPage({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={10} className="px-4 py-6 text-center text-zinc-500">
                   {hasFilters ? (
                     <>
                       No finished stones match this filter.{" "}
@@ -141,6 +148,7 @@ export default async function PolishPage({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-zinc-500">{p.location ?? "—"}</td>
+                <td className="px-4 py-3 text-zinc-500">{p.saleType ? SALE_TYPE_LABELS[p.saleType] : "—"}</td>
                 <td className="px-4 py-3 text-zinc-800">
                   {p.askingPrice !== null ? formatMoney(p.askingPrice, p.currency) : "—"}
                 </td>

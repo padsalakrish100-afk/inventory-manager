@@ -22,7 +22,10 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
         },
       },
     }),
-    prisma.party.findMany({ orderBy: { name: "asc" } }),
+    prisma.party.findMany({
+      where: { category: "CUSTOMER", active: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
   if (!polished) notFound();
 

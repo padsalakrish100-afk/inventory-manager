@@ -39,6 +39,11 @@ export default async function AppLayout({
                 </Link>
               ))}
               {isAdmin && (
+                <Link href="/settings/parties" className="whitespace-nowrap text-zinc-600 hover:text-zinc-900">
+                  Parties
+                </Link>
+              )}
+              {isAdmin && (
                 <Link href="/users" className="whitespace-nowrap text-zinc-600 hover:text-zinc-900">
                   Users
                 </Link>

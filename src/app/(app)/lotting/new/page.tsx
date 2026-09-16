@@ -2,7 +2,10 @@ import { prisma } from "@/lib/prisma";
 import { LotForm } from "../lot-form";
 
 export default async function NewLotPage() {
-  const parties = await prisma.party.findMany({ orderBy: { name: "asc" } });
+  const parties = await prisma.party.findMany({
+    where: { category: "TENDER_VENDOR", active: true },
+    orderBy: { name: "asc" },
+  });
 
   return (
     <div className="flex flex-col gap-6">

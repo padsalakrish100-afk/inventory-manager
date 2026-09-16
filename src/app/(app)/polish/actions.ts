@@ -118,7 +118,7 @@ export async function updateSaleInfo(
     const buyer = await prisma.party.upsert({
       where: { name: buyerName },
       update: {},
-      create: { name: buyerName },
+      create: { name: buyerName, category: "CUSTOMER" },
     });
     buyerId = buyer.id;
   }

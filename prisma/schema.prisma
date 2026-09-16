@@ -88,7 +88,9 @@ model Product {
 
 enum ProcessName {
   GALAXY
-  SAWING
+  PLANNING
+  LASER_SAWING
+  BRUTING
   CHABKA
   POLISHING
 }
@@ -106,6 +108,17 @@ model ProcessMovement {
   returnWeight Float?
   notes        String?
   createdAt    DateTime    @default(now())
+
+  // Set only when this stone already has a completed movement at this same
+  // process — required at issue time so a re-cut, redo, etc. is explained,
+  // not just silently counted as rework.
+  reissueReason String?
+
+  // The labor cost charged for this specific issue — auto-filled from the
+  // karigar's current ProcessRate at issue time, editable. Stored on the
+  // movement itself (not looked up later) so a later rate change never
+  // rewrites what a past movement actually cost.
+  laborCost Float?
 
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   productId String
@@ -298,20 +311,33 @@ model LotExpense {
 }
 
 // A saved price list entry — what a given party charges per carat for a
-// given process — so entering a lot expense doesn't mean retyping the same
-// rate every time. Managed from Settings.
+// given process — so entering a lot expense (or, now, a Manufacturing
+// issue's labor cost) doesn't mean retyping the same rate every time.
+// Managed from Settings.
+//
+// `stage` (LotStatus) is the original field from the old Lots-expense
+// feature and is no longer written by any current page — left as-is since
+// it may still hold historical rows. `process` (ProcessName) is the field
+// the current Manufacturing Issue flow reads and writes. A karigar's
+// current rate for a process is whichever row has the latest
+// `effectiveFrom` at or before now; adding a new row (rather than editing
+// one in place) is how a rate change is recorded, so a past
+// ProcessMovement's stored laborCost is never retroactively reinterpreted.
 model ProcessRate {
-  id           String    @id @default(cuid())
-  stage        LotStatus
-  ratePerCarat Float
-  caratMin     Float?
-  caratMax     Float?
-  createdAt    DateTime  @default(now())
+  id            String       @id @default(cuid())
+  stage         LotStatus?
+  process       ProcessName?
+  ratePerCarat  Float
+  caratMin      Float?
+  caratMax      Float?
+  effectiveFrom DateTime     @default(now())
+  createdAt     DateTime     @default(now())
 
   party   Party  @relation(fields: [partyId], references: [id], onDelete: Cascade)
   partyId String
 
   @@index([stage])
+  @@index([process])
   @@index([partyId])
 }
 
@@ -326,15 +352,29 @@ enum PartyType {
   BOTH
 }
 
+// How a party is used in the manufacturing/sales workflow — distinct from
+// the older, more generic `type` field. Drives which dropdown a party
+// shows up in: tender/vendor on Lotting's source, karigar on Manufacturing
+// Issue, customer on a Polish sale's buyer.
+enum PartyCategory {
+  TENDER_VENDOR
+  KARIGAR
+  CUSTOMER
+}
+
 model Party {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  type      PartyType @default(BOTH)
+  id        String         @id @default(cuid())
+  name      String         @unique
+  type      PartyType      @default(BOTH)
+  category  PartyCategory?
+  // Deactivated, not deleted — old parties stay linked to historical
+  // records (movements, sales, lots) and must never be removed outright.
+  active    Boolean        @default(true)
   phone     String?
   email     String?
   address   String?
   notes     String?
-  createdAt DateTime  @default(now())
+  createdAt DateTime       @default(now())
 
   transactions         Transaction[]
   lotExpenses          LotExpense[]

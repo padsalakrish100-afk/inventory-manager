@@ -22,7 +22,7 @@ export type IssueInput = {
   party: string;
   date: string;
   notes: string;
-  stones: { sku: string; weight: string }[];
+  stones: { sku: string; weight: string; laborCost: string; reissueReason: string }[];
 };
 
 export type IssueResult = { error?: string; memoId?: string };
@@ -48,7 +48,10 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
   const skus = stoneInputs.map((s) => s.sku.trim());
   const products = await prisma.product.findMany({
     where: { sku: { in: skus } },
-    include: { polishedStone: true },
+    include: {
+      polishedStone: true,
+      movements: { where: { returnDate: { not: null } }, select: { process: true } },
+    },
   });
   const bySku = new Map(products.map((p) => [p.sku, p]));
 
@@ -57,12 +60,18 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
     if (!product) return { error: `Stone "${sku}" not found.` };
     if (product.polishedStone) return { error: `Stone "${sku}" has already been transferred to Polish.` };
     if (product.currentProcess) return { error: `Stone "${sku}" is already out at ${product.currentProcess}.` };
+
+    const alreadyCompletedThisProcess = product.movements.some((m) => m.process === process);
+    const reissueReason = stoneInputs.find((s) => s.sku.trim() === sku)?.reissueReason.trim();
+    if (alreadyCompletedThisProcess && !reissueReason) {
+      return { error: `Stone "${sku}" already completed this process before — a reissue reason is required.` };
+    }
   }
 
   const party = await prisma.party.upsert({
     where: { name: partyName },
     update: {},
-    create: { name: partyName },
+    create: { name: partyName, category: "KARIGAR" },
   });
 
   const memoNumber = await nextMemoNumber();
@@ -74,6 +83,8 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
     ...stoneInputs.map((s) => {
       const product = bySku.get(s.sku.trim())!;
       const weight = s.weight.trim() ? Number(s.weight) : product.caratWeight;
+      const laborCostRaw = s.laborCost.trim();
+      const laborCost = laborCostRaw ? Number(laborCostRaw) : null;
       return prisma.processMovement.create({
         data: {
           productId: product.id,
@@ -81,6 +92,8 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
           partyId: party.id,
           issueDate: date,
           issueWeight: Number.isFinite(weight) ? weight : null,
+          laborCost: laborCost !== null && Number.isFinite(laborCost) ? laborCost : null,
+          reissueReason: s.reissueReason.trim() || null,
           notes,
           memoId: memo.id,
         },

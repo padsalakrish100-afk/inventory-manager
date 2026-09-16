@@ -1,7 +1,8 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { PROCESS_LABELS, PROCESS_STYLES } from "@/lib/process";
+import { PROCESS_LABELS, PROCESS_STYLES, PROCESS_OPTIONS } from "@/lib/process";
 import { UndoMovementButton } from "./undo-movement-button";
 import { DeleteStoneButton } from "./delete-stone-button";
 
@@ -83,17 +84,18 @@ export default async function StoneDetailPage({ params }: { params: Promise<{ id
       </div>
 
       {processCounts.size > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {[...processCounts.entries()].map(([process, count]) => (
-            <span
-              key={process}
-              className={`rounded-full px-2.5 py-1 text-xs font-medium ${PROCESS_STYLES[process]}`}
-            >
-              {PROCESS_LABELS[process] ?? process} × {count}
-              {count > 1 ? " (reworked)" : ""}
-            </span>
-          ))}
-        </div>
+        <p className="text-sm text-zinc-700">
+          {PROCESS_OPTIONS.filter((p) => processCounts.has(p.value))
+            .map((p) => {
+              const count = processCounts.get(p.value)!;
+              return (
+                <span key={p.value} className={count > 1 ? "font-medium text-orange-600" : ""}>
+                  {p.label}: {count}×
+                </span>
+              );
+            })
+            .reduce((acc, el, i) => (i === 0 ? [el] : [...acc, <span key={`sep-${i}`} className="text-zinc-300"> · </span>, el]), [] as ReactNode[])}
+        </p>
       )}
 
       <section className="flex flex-col gap-3">
@@ -106,6 +108,7 @@ export default async function StoneDetailPage({ params }: { params: Promise<{ id
                 <th className="px-4 py-3 font-medium">Party</th>
                 <th className="px-4 py-3 font-medium">Issued</th>
                 <th className="px-4 py-3 font-medium">Issue wt.</th>
+                <th className="px-4 py-3 font-medium">Labor cost</th>
                 <th className="px-4 py-3 font-medium">Returned</th>
                 <th className="px-4 py-3 font-medium">Return wt.</th>
                 <th className="px-4 py-3 font-medium"></th>
@@ -114,7 +117,7 @@ export default async function StoneDetailPage({ params }: { params: Promise<{ id
             <tbody>
               {stone.movements.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-zinc-500">
+                  <td colSpan={8} className="px-4 py-6 text-center text-zinc-500">
                     Never issued yet.
                   </td>
                 </tr>
@@ -125,10 +128,14 @@ export default async function StoneDetailPage({ params }: { params: Promise<{ id
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PROCESS_STYLES[m.process]}`}>
                       {PROCESS_LABELS[m.process]}
                     </span>
+                    {m.reissueReason && (
+                      <p className="mt-1 max-w-[16rem] text-xs italic text-amber-700">Reissue: {m.reissueReason}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-zinc-800">{m.party?.name ?? "—"}</td>
                   <td className="px-4 py-3 text-zinc-500">{m.issueDate.toLocaleDateString()}</td>
                   <td className="px-4 py-3 text-zinc-500">{m.issueWeight ?? "—"}</td>
+                  <td className="px-4 py-3 text-zinc-500">{m.laborCost !== null ? `₹${m.laborCost.toFixed(2)}` : "—"}</td>
                   <td className="px-4 py-3 text-zinc-500">
                     {m.returnDate ? m.returnDate.toLocaleDateString() : "Not returned yet"}
                   </td>
