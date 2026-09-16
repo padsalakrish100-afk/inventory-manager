@@ -47,21 +47,25 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
     if (rows.some((r) => r.sku === sku)) return;
 
     let completedProcesses: string[] = [];
+    let weight = "";
     try {
       const res = await fetch(`/api/stones/${encodeURIComponent(sku)}/history`);
       if (res.ok) {
         const data = await res.json();
         completedProcesses = data.completedProcesses ?? [];
+        if (data.caratWeight !== null && data.caratWeight !== undefined) {
+          weight = String(data.caratWeight);
+        }
       }
     } catch {
-      // Lookup failing just means no reissue check happens client-side —
-      // the server still enforces it at submit time.
+      // Lookup failing just means no reissue check or weight prefill happens
+      // client-side — the server still enforces the reissue check at submit time.
     }
 
     setRows((prev) => [
       ...prev,
       recomputeLaborCost(
-        { sku, weight: "", laborCost: "", laborCostOverridden: false, reissueReason: "", completedProcesses },
+        { sku, weight, laborCost: "", laborCostOverridden: false, reissueReason: "", completedProcesses },
         process,
         party,
       ),
