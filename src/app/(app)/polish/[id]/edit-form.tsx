@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { updatePolishedStone } from "../actions";
+import { SALE_TYPE_OPTIONS } from "@/lib/polish-status";
 
 const SHAPES = [
   "Round",
@@ -24,6 +25,7 @@ type Defaults = {
   certified: boolean;
   certLab: string | null;
   certNumber: string | null;
+  saleType: string | null;
   shape: string | null;
   caratWeight: number | null;
   color: string | null;
@@ -63,6 +65,28 @@ export function EditPolishedStoneForm({ id, defaults }: { id: string; defaults: 
             <Field label="Certificate number" name="certNumber" defaultValue={defaults.certNumber ?? ""} />
           </div>
         )}
+        <div>
+          <label htmlFor="saleType" className="block text-sm font-medium text-zinc-700">
+            Sale type
+          </label>
+          <select
+            id="saleType"
+            name="saleType"
+            defaultValue={defaults.saleType ?? ""}
+            className="mt-1 w-full max-w-xs rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+          >
+            <option value="">—</option>
+            {SALE_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-zinc-500">
+            How it's actually sold — a certified stone can still go out in a loose parcel rather
+            than being marketed on its own.
+          </p>
+        </div>
       </fieldset>
 
       <fieldset className="flex flex-col gap-4 border-0 p-0">

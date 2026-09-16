@@ -40,6 +40,20 @@ export const PAYMENT_STATUS_STYLES: Record<string, string> = {
   PAID: "bg-emerald-50 text-emerald-700",
 };
 
+export const SALE_TYPE_VALUES = ["CERTIFIED_SINGLE", "NON_CERTIFIED_SINGLE", "LOOSE_PARCEL"] as const;
+
+export type SaleTypeValue = (typeof SALE_TYPE_VALUES)[number];
+
+export const SALE_TYPE_OPTIONS: { value: SaleTypeValue; label: string }[] = [
+  { value: "CERTIFIED_SINGLE", label: "Certified single stone" },
+  { value: "NON_CERTIFIED_SINGLE", label: "Non-certified single stone" },
+  { value: "LOOSE_PARCEL", label: "Loose parcel" },
+];
+
+export const SALE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  SALE_TYPE_OPTIONS.map((s) => [s.value, s.label]),
+);
+
 // Total cost is derived, never stored — always the sum of whichever cost
 // components have been entered so far.
 export function computeTotalCost(stone: {

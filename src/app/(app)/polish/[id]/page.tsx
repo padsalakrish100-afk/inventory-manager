@@ -53,6 +53,7 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
           certified: polished.certified,
           certLab: polished.certLab,
           certNumber: polished.certNumber,
+          saleType: polished.saleType,
           shape: polished.shape,
           caratWeight: polished.caratWeight,
           color: polished.color,

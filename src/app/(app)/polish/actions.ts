@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import type { PolishStatus, PaymentStatus } from "@/generated/prisma/client";
-import { POLISH_STATUS_VALUES, PAYMENT_STATUS_VALUES } from "@/lib/polish-status";
+import type { PolishStatus, PaymentStatus, SaleType } from "@/generated/prisma/client";
+import { POLISH_STATUS_VALUES, PAYMENT_STATUS_VALUES, SALE_TYPE_VALUES } from "@/lib/polish-status";
 
 export async function updatePolishedStone(
   polishedStoneId: string,
@@ -18,6 +18,7 @@ export async function updatePolishedStone(
   const certified = formData.get("certified") === "true";
   const certLab = String(formData.get("certLab") ?? "").trim() || null;
   const certNumber = String(formData.get("certNumber") ?? "").trim() || null;
+  const saleTypeRaw = String(formData.get("saleType") ?? "").trim();
   const shape = String(formData.get("shape") ?? "").trim() || null;
   const caratWeightRaw = String(formData.get("caratWeight") ?? "").trim();
   const caratWeight = caratWeightRaw ? Number(caratWeightRaw) : null;
@@ -33,6 +34,9 @@ export async function updatePolishedStone(
   if (caratWeight !== null && (!Number.isFinite(caratWeight) || caratWeight < 0)) {
     return "Carat weight must be a non-negative number.";
   }
+  if (saleTypeRaw && !(SALE_TYPE_VALUES as readonly string[]).includes(saleTypeRaw)) {
+    return "Invalid sale type.";
+  }
 
   await prisma.polishedStone.update({
     where: { id: polishedStoneId },
@@ -40,6 +44,7 @@ export async function updatePolishedStone(
       certified,
       certLab,
       certNumber,
+      saleType: saleTypeRaw ? (saleTypeRaw as SaleType) : null,
       shape,
       caratWeight,
       color,

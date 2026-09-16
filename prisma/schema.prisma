@@ -144,11 +144,15 @@ model Memo {
 // full certificate/grading detail and a traceable link back to that SKU
 // (and, through it, to the Lot it was cut from).
 model PolishedStone {
-  id           String   @id @default(cuid())
-  stockId      String   @unique
-  certified    Boolean  @default(false)
+  id           String    @id @default(cuid())
+  stockId      String    @unique
+  certified    Boolean   @default(false)
   certLab      String?
   certNumber   String?
+  // How the stone is actually sold — separate from `certified`, since a
+  // certified stone can still be sold within a loose parcel rather than
+  // marketed individually.
+  saleType     SaleType?
   shape        String?
   caratWeight  Float?
   color        String?
@@ -159,7 +163,7 @@ model PolishedStone {
   fluorescence String?
   measurements String?
   notes        String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   sourceProduct   Product @relation(fields: [sourceProductId], references: [id])
   sourceProductId String  @unique
@@ -194,6 +198,12 @@ enum PolishStatus {
   RESERVED
   ON_MEMO
   SOLD
+}
+
+enum SaleType {
+  CERTIFIED_SINGLE
+  NON_CERTIFIED_SINGLE
+  LOOSE_PARCEL
 }
 
 enum PaymentStatus {
