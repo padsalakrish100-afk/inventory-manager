@@ -4,13 +4,9 @@ import { auth, signOut } from "@/auth";
 import { getSettings } from "@/lib/settings";
 
 const navItems = [
+  { href: "/lotting", label: "Lotting" },
   { href: "/manufacturing", label: "Manufacturing" },
   { href: "/polish", label: "Polish" },
-  { href: "/lots", label: "Lots" },
-  { href: "/scan", label: "Scan" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/parties", label: "Contacts" },
-  { href: "/reports", label: "Reports" },
 ];
 
 export default async function AppLayout({
@@ -33,11 +29,6 @@ export default async function AppLayout({
           <div className="flex flex-wrap items-center gap-6">
             <span className="shrink-0 whitespace-nowrap font-semibold text-[var(--accent)]">{appName}</span>
             <nav className="flex flex-wrap gap-4 text-sm">
-              {isAdmin && (
-                <Link href="/dashboard" className="whitespace-nowrap text-zinc-600 hover:text-zinc-900">
-                  Dashboard
-                </Link>
-              )}
               {navItems.map((item) => (
                 <Link
                   key={item.href}
@@ -50,11 +41,6 @@ export default async function AppLayout({
               {isAdmin && (
                 <Link href="/users" className="whitespace-nowrap text-zinc-600 hover:text-zinc-900">
                   Users
-                </Link>
-              )}
-              {isAdmin && (
-                <Link href="/settings" className="whitespace-nowrap text-zinc-600 hover:text-zinc-900">
-                  Settings
                 </Link>
               )}
             </nav>

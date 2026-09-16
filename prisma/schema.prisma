@@ -39,13 +39,13 @@ model User {
 }
 
 model Product {
-  id           String           @id @default(cuid())
-  sku          String           @unique
-  name         String
-  unit         String           @default("pcs")
-  reorderLevel Int              @default(0)
-  stock        Int              @default(0)
-  location     String?
+  id               String           @id @default(cuid())
+  sku              String           @unique
+  name             String
+  unit             String           @default("pcs")
+  reorderLevel     Int              @default(0)
+  stock            Int              @default(0)
+  location         String?
   certificationLab CertificationLab @default(NONE)
 
   // Quality attributes (gemstones)
@@ -66,13 +66,103 @@ model Product {
   // Kept in sync with the latest ProcessLog entry for this product.
   stage LotStatus @default(ROUGH)
 
+  // Denormalized "where is this stone right now" — null means it's available
+  // (freshly lotted, or returned and not yet issued elsewhere). Kept in sync
+  // by issuing/returning a ProcessMovement, so Manufacturing lists don't need
+  // to derive it from history on every read.
+  currentProcess ProcessName?
+  currentParty   Party?       @relation("CurrentlyHolding", fields: [currentPartyId], references: [id])
+  currentPartyId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions Transaction[]
-  processLogs  ProcessLog[]
+  transactions  Transaction[]
+  processLogs   ProcessLog[]
+  movements     ProcessMovement[]
+  polishedStone PolishedStone?
 
   @@index([lotId])
+  @@index([currentPartyId])
+}
+
+enum ProcessName {
+  GALAXY
+  SAWING
+  CHABKA
+  POLISHING
+}
+
+// One issue-and-return cycle for a single stone: sent to a process/party,
+// later returned. The stone's currentProcess/currentParty reflect whichever
+// movement is still open (returnDate null). A printed Memo groups every
+// movement created in the same Issue action.
+model ProcessMovement {
+  id           String      @id @default(cuid())
+  process      ProcessName
+  issueDate    DateTime    @default(now())
+  issueWeight  Float?
+  returnDate   DateTime?
+  returnWeight Float?
+  notes        String?
+  createdAt    DateTime    @default(now())
+
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+
+  party   Party?  @relation(fields: [partyId], references: [id])
+  partyId String?
+
+  memo   Memo?   @relation(fields: [memoId], references: [id])
+  memoId String?
+
+  @@index([productId])
+  @@index([partyId])
+  @@index([memoId])
+}
+
+// The printed voucher handed to a party when stones are issued to them —
+// one memo per Issue action, listing every stone (via its movements) with
+// its weight, for the party to sign as acknowledgment of receipt.
+model Memo {
+  id         String      @id @default(cuid())
+  memoNumber String      @unique
+  process    ProcessName
+  date       DateTime    @default(now())
+  createdAt  DateTime    @default(now())
+
+  party   Party  @relation(fields: [partyId], references: [id])
+  partyId String
+
+  movements ProcessMovement[]
+
+  @@index([partyId])
+}
+
+// A finished stone gets a new Stock ID here once transferred out of
+// Manufacturing — separate numbering from its manufacturing-stage SKU, with
+// full certificate/grading detail and a traceable link back to that SKU
+// (and, through it, to the Lot it was cut from).
+model PolishedStone {
+  id           String   @id @default(cuid())
+  stockId      String   @unique
+  certified    Boolean  @default(false)
+  certLab      String?
+  certNumber   String?
+  shape        String?
+  caratWeight  Float?
+  color        String?
+  clarity      String?
+  cutGrade     String?
+  polishGrade  String?
+  symmetry     String?
+  fluorescence String?
+  measurements String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  sourceProduct   Product @relation(fields: [sourceProductId], references: [id])
+  sourceProductId String  @unique
 }
 
 enum LotStatus {
@@ -127,6 +217,10 @@ model Lot {
   description    String?
   status         LotStatus @default(ROUGH)
   createdAt      DateTime  @default(now())
+
+  // Who the rough came from — a tender or a supplying party.
+  sourceParty   Party?  @relation("LotSource", fields: [sourcePartyId], references: [id])
+  sourcePartyId String?
 
   products Product[]
   expenses LotExpense[]
@@ -195,10 +289,14 @@ model Party {
   notes     String?
   createdAt DateTime  @default(now())
 
-  transactions Transaction[]
-  lotExpenses  LotExpense[]
-  processLogs  ProcessLog[]
-  processRates ProcessRate[]
+  transactions      Transaction[]
+  lotExpenses       LotExpense[]
+  processLogs       ProcessLog[]
+  processRates      ProcessRate[]
+  processMovements  ProcessMovement[]
+  memos             Memo[]
+  lotsSourced       Lot[]             @relation("LotSource")
+  stonesCurrentlyAt Product[]         @relation("CurrentlyHolding")
 }
 
 model Transaction {

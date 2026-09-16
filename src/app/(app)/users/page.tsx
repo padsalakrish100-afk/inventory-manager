@@ -7,7 +7,7 @@ import { DeleteUserButton } from "./delete-button";
 export default async function UsersPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/transactions");
+  if (session.user.role !== "ADMIN") redirect("/manufacturing");
 
   const users = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
 
