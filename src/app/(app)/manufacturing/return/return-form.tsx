@@ -29,9 +29,10 @@ export function ReturnForm() {
       return;
     }
     const info = await res.json();
+    const weight = info.caratWeight !== null && info.caratWeight !== undefined ? String(info.caratWeight) : "";
     setRows((prev) => [
       ...prev,
-      { sku, weight: "", process: info.process, party: info.party },
+      { sku, weight, process: info.process, party: info.party },
     ]);
   }
 

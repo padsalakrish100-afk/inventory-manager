@@ -20,5 +20,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ sku
   return Response.json({
     process: product.currentProcess,
     party: product.currentParty?.name ?? null,
+    caratWeight: product.caratWeight,
   });
 }
