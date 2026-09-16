@@ -4,11 +4,15 @@ import { PROCESS_OPTIONS, PROCESS_STYLES } from "@/lib/process";
 import { StoneLookupForm } from "./stone-lookup-form";
 
 export default async function ManufacturingPage() {
-  const stonesOut = await prisma.product.findMany({
-    where: { currentProcess: { not: null } },
-    include: { currentParty: true, lot: true },
-    orderBy: { sku: "asc" },
-  });
+  const [stonesOut, inHandCount, polishedCount] = await Promise.all([
+    prisma.product.findMany({
+      where: { currentProcess: { not: null } },
+      include: { currentParty: true, lot: true },
+      orderBy: { sku: "asc" },
+    }),
+    prisma.product.count({ where: { currentProcess: null, polishedStone: null } }),
+    prisma.product.count({ where: { polishedStone: { isNot: null } } }),
+  ]);
 
   const byProcess = new Map<string, typeof stonesOut>();
   for (const p of PROCESS_OPTIONS) byProcess.set(p.value, []);
@@ -43,6 +47,12 @@ export default async function ManufacturingPage() {
             Reports
           </Link>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label="Stones in hand" sublabel="not issued, not yet in Polish" value={String(inHandCount)} />
+        <StatCard label="Stones issued out" sublabel="currently with a karigar" value={String(stonesOut.length)} />
+        <StatCard label="Transferred to Polish" value={String(polishedCount)} />
       </div>
 
       <div className="rounded-lg border border-zinc-200 bg-white p-5">
@@ -117,6 +127,16 @@ export default async function ManufacturingPage() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function StatCard({ label, sublabel, value }: { label: string; sublabel?: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-5">
+      <p className="text-sm text-zinc-500">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-zinc-900">{value}</p>
+      {sublabel && <p className="mt-1 text-xs text-zinc-400">{sublabel}</p>}
     </div>
   );
 }
