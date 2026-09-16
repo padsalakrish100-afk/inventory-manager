@@ -54,3 +54,21 @@ export async function updatePolishedStone(
   revalidatePath("/polish");
   revalidatePath(`/polish/${polishedStoneId}`);
 }
+
+// Undoes a mistaken transfer — deletes the Stock ID and sends the stone
+// back to Manufacturing so it can be transferred again correctly. Returns
+// the source stone's id so the caller can navigate there itself.
+export async function undoTransfer(polishedStoneId: string): Promise<string> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const polished = await prisma.polishedStone.findUnique({ where: { id: polishedStoneId } });
+  if (!polished) throw new Error("Stock entry not found.");
+
+  await prisma.polishedStone.delete({ where: { id: polishedStoneId } });
+
+  revalidatePath("/polish");
+  revalidatePath("/manufacturing");
+  revalidatePath("/manufacturing/reports");
+  return polished.sourceProductId;
+}

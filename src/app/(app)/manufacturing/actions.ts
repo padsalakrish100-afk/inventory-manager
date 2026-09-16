@@ -252,3 +252,58 @@ export async function transferToPolish(
   revalidatePath("/lotting");
   redirect(`/polish/${polished.id}`);
 }
+
+// Removes a mistaken issue/return entry entirely — not a "return," which
+// implies the stone physically came back. If this was the stone's open
+// movement (never returned), the stone goes back to "available."
+export async function undoMovement(movementId: string, productId: string) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const movement = await prisma.processMovement.findUnique({ where: { id: movementId } });
+  if (!movement) throw new Error("Movement not found.");
+
+  await prisma.processMovement.delete({ where: { id: movementId } });
+
+  if (!movement.returnDate) {
+    await prisma.product.update({
+      where: { id: productId },
+      data: { currentProcess: null, currentPartyId: null },
+    });
+  }
+
+  const remainingOnMemo = movement.memoId
+    ? await prisma.processMovement.count({ where: { memoId: movement.memoId } })
+    : 1;
+  if (movement.memoId && remainingOnMemo === 0) {
+    await prisma.memo.delete({ where: { id: movement.memoId } });
+  }
+
+  revalidatePath(`/manufacturing/stone/${productId}`);
+  revalidatePath("/manufacturing");
+  revalidatePath("/manufacturing/reports");
+  revalidatePath("/lotting");
+}
+
+// Deletes a stone entered by mistake (wrong count on a lot, duplicate scan,
+// etc.) — only allowed if it's never been issued anywhere or transferred to
+// Polish, so real manufacturing history can never be silently erased.
+export async function deleteStone(productId: string) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: { polishedStone: true, _count: { select: { movements: true } } },
+  });
+  if (!product) throw new Error("Stone not found.");
+  if (product.polishedStone) throw new Error("This stone has already been transferred to Polish — can't delete it.");
+  if (product._count.movements > 0) throw new Error("This stone has movement history — can't delete it.");
+
+  const lotId = product.lotId;
+  await prisma.product.delete({ where: { id: productId } });
+
+  revalidatePath("/manufacturing");
+  revalidatePath("/manufacturing/reports");
+  if (lotId) revalidatePath(`/lotting/${lotId}`);
+}

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { EditPolishedStoneForm } from "./edit-form";
 import { BarcodeLabel, PrintLabelButton } from "@/components/barcode-label";
+import { UndoTransferButton } from "./undo-transfer-button";
 
 export default async function PolishedStoneDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -31,6 +32,7 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
         <div className="flex items-center gap-4">
           <BarcodeLabel sku={polished.stockId} name={polished.shape ?? "Polished stone"} caratWeight={polished.caratWeight} />
           <PrintLabelButton />
+          <UndoTransferButton polishedStoneId={polished.id} />
         </div>
       </div>
 

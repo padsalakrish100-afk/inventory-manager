@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { PROCESS_LABELS, PROCESS_STYLES } from "@/lib/process";
+import { UndoMovementButton } from "./undo-movement-button";
+import { DeleteStoneButton } from "./delete-stone-button";
 
 export default async function StoneDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -45,25 +47,30 @@ export default async function StoneDetailPage({ params }: { params: Promise<{ id
             )}
           </p>
         </div>
-        {stone.polishedStone ? (
-          <Link
-            href={`/polish/${stone.polishedStone.id}`}
-            className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
-          >
-            View in Polish ({stone.polishedStone.stockId})
-          </Link>
-        ) : canTransfer ? (
-          <Link
-            href={`/manufacturing/stone/${stone.id}/transfer`}
-            className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110"
-          >
-            Transfer to Polish
-          </Link>
-        ) : (
-          <span className="rounded-md border border-zinc-200 px-4 py-2 text-sm text-zinc-400">
-            Return it first to transfer
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {stone.polishedStone ? (
+            <Link
+              href={`/polish/${stone.polishedStone.id}`}
+              className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+            >
+              View in Polish ({stone.polishedStone.stockId})
+            </Link>
+          ) : canTransfer ? (
+            <Link
+              href={`/manufacturing/stone/${stone.id}/transfer`}
+              className="rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110"
+            >
+              Transfer to Polish
+            </Link>
+          ) : (
+            <span className="rounded-md border border-zinc-200 px-4 py-2 text-sm text-zinc-400">
+              Return it first to transfer
+            </span>
+          )}
+          {stone.movements.length === 0 && !stone.polishedStone && (
+            <DeleteStoneButton productId={stone.id} lotId={stone.lotId} />
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -101,12 +108,13 @@ export default async function StoneDetailPage({ params }: { params: Promise<{ id
                 <th className="px-4 py-3 font-medium">Issue wt.</th>
                 <th className="px-4 py-3 font-medium">Returned</th>
                 <th className="px-4 py-3 font-medium">Return wt.</th>
+                <th className="px-4 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody>
               {stone.movements.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
+                  <td colSpan={7} className="px-4 py-6 text-center text-zinc-500">
                     Never issued yet.
                   </td>
                 </tr>
@@ -125,6 +133,9 @@ export default async function StoneDetailPage({ params }: { params: Promise<{ id
                     {m.returnDate ? m.returnDate.toLocaleDateString() : "Not returned yet"}
                   </td>
                   <td className="px-4 py-3 text-zinc-500">{m.returnWeight ?? "—"}</td>
+                  <td className="px-4 py-3">
+                    <UndoMovementButton movementId={m.id} productId={stone.id} />
+                  </td>
                 </tr>
               ))}
             </tbody>

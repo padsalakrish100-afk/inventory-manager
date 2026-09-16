@@ -63,3 +63,28 @@ export async function createLot(
   revalidatePath("/lotting");
   redirect(`/lotting/${lot.id}`);
 }
+
+// Deletes a lot entered by mistake — only allowed while none of its stones
+// have ever been issued or transferred to Polish, so real manufacturing
+// history can never be silently erased.
+export async function deleteLot(lotId: string) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const lot = await prisma.lot.findUnique({
+    where: { id: lotId },
+    include: { products: { include: { polishedStone: true, _count: { select: { movements: true } } } } },
+  });
+  if (!lot) throw new Error("Lot not found.");
+
+  const hasHistory = lot.products.some((p) => p.polishedStone || p._count.movements > 0);
+  if (hasHistory) {
+    throw new Error("This lot has stones with manufacturing history — can't delete it.");
+  }
+
+  await prisma.product.deleteMany({ where: { lotId } });
+  await prisma.lot.delete({ where: { id: lotId } });
+
+  revalidatePath("/lotting");
+  revalidatePath("/manufacturing/reports");
+}

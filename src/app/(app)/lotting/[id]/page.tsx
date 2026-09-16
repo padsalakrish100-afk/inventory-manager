@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { PROCESS_LABELS, PROCESS_STYLES } from "@/lib/process";
+import { DeleteLotButton } from "./delete-lot-button";
 
 export default async function LotDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -30,14 +31,17 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
             {lot.createdAt.toLocaleDateString()}
           </p>
         </div>
-        {lot.products.length > 0 && (
-          <Link
-            href={`/lotting/${lot.id}/labels`}
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
-          >
-            Print labels
-          </Link>
-        )}
+        <div className="flex items-center gap-3">
+          {lot.products.length > 0 && (
+            <Link
+              href={`/lotting/${lot.id}/labels`}
+              className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+            >
+              Print labels
+            </Link>
+          )}
+          <DeleteLotButton lotId={lot.id} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
