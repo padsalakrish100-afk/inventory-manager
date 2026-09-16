@@ -163,6 +163,43 @@ model PolishedStone {
 
   sourceProduct   Product @relation(fields: [sourceProductId], references: [id])
   sourceProductId String  @unique
+
+  // Sales tracking — the app stops tracking a stone at transfer otherwise,
+  // with no way to record who bought it, for how much, or what it cost.
+  status      PolishStatus @default(AVAILABLE)
+  location    String?
+  askingPrice Float?
+  currency    String       @default("USD")
+
+  buyer   Party?  @relation("PolishedStoneBuyer", fields: [buyerId], references: [id])
+  buyerId String?
+
+  soldPrice     Float?
+  soldDate      DateTime?
+  paymentStatus PaymentStatus?
+
+  // Cost components — total cost is computed in the app (sum of these),
+  // not stored as its own column.
+  roughCostAlloc Float?
+  laborCost      Float?
+  certCost       Float?
+  otherCost      Float?
+
+  @@index([buyerId])
+  @@index([status])
+}
+
+enum PolishStatus {
+  AVAILABLE
+  RESERVED
+  ON_MEMO
+  SOLD
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
 }
 
 enum LotStatus {
@@ -289,14 +326,15 @@ model Party {
   notes     String?
   createdAt DateTime  @default(now())
 
-  transactions      Transaction[]
-  lotExpenses       LotExpense[]
-  processLogs       ProcessLog[]
-  processRates      ProcessRate[]
-  processMovements  ProcessMovement[]
-  memos             Memo[]
-  lotsSourced       Lot[]             @relation("LotSource")
-  stonesCurrentlyAt Product[]         @relation("CurrentlyHolding")
+  transactions         Transaction[]
+  lotExpenses          LotExpense[]
+  processLogs          ProcessLog[]
+  processRates         ProcessRate[]
+  processMovements     ProcessMovement[]
+  memos                Memo[]
+  lotsSourced          Lot[]             @relation("LotSource")
+  stonesCurrentlyAt    Product[]         @relation("CurrentlyHolding")
+  polishedStonesBought PolishedStone[]   @relation("PolishedStoneBuyer")
 }
 
 model Transaction {

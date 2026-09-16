@@ -2,22 +2,28 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { EditPolishedStoneForm } from "./edit-form";
+import { SaleForm } from "./sale-form";
 import { BarcodeLabel, PrintLabelButton } from "@/components/barcode-label";
 import { UndoTransferButton } from "./undo-transfer-button";
+import { POLISH_STATUS_LABELS, POLISH_STATUS_STYLES } from "@/lib/polish-status";
 
 export default async function PolishedStoneDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const polished = await prisma.polishedStone.findUnique({
-    where: { id },
-    include: {
-      sourceProduct: {
-        include: {
-          lot: { include: { sourceParty: true } },
-          movements: { include: { party: true }, orderBy: { issueDate: "asc" } },
+  const [polished, parties] = await Promise.all([
+    prisma.polishedStone.findUnique({
+      where: { id },
+      include: {
+        buyer: true,
+        sourceProduct: {
+          include: {
+            lot: { include: { sourceParty: true } },
+            movements: { include: { party: true }, orderBy: { issueDate: "asc" } },
+          },
         },
       },
-    },
-  });
+    }),
+    prisma.party.findMany({ orderBy: { name: "asc" } }),
+  ]);
   if (!polished) notFound();
 
   const source = polished.sourceProduct;
@@ -26,7 +32,12 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
     <div className="flex flex-col gap-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-900">Stock {polished.stockId}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-zinc-900">Stock {polished.stockId}</h1>
+            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${POLISH_STATUS_STYLES[polished.status]}`}>
+              {POLISH_STATUS_LABELS[polished.status]}
+            </span>
+          </div>
           <p className="mt-1 text-sm text-zinc-500">Finished stone, ready for sale.</p>
         </div>
         <div className="flex items-center gap-4">
@@ -54,6 +65,28 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
           notes: polished.notes,
         }}
       />
+
+      <section className="flex max-w-2xl flex-col gap-4">
+        <h2 className="text-lg font-semibold text-zinc-900">Sales &amp; cost</h2>
+        <SaleForm
+          id={polished.id}
+          buyerNames={parties.map((p) => p.name)}
+          defaults={{
+            status: polished.status,
+            location: polished.location,
+            askingPrice: polished.askingPrice,
+            currency: polished.currency,
+            buyerName: polished.buyer?.name ?? null,
+            soldPrice: polished.soldPrice,
+            soldDate: polished.soldDate ? polished.soldDate.toISOString().slice(0, 10) : null,
+            paymentStatus: polished.paymentStatus,
+            roughCostAlloc: polished.roughCostAlloc,
+            laborCost: polished.laborCost,
+            certCost: polished.certCost,
+            otherCost: polished.otherCost,
+          }}
+        />
+      </section>
 
       <section className="flex max-w-2xl flex-col gap-3">
         <h2 className="text-lg font-semibold text-zinc-900">History &amp; traceability</h2>
