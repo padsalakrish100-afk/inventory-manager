@@ -33,6 +33,7 @@ export default async function LottingPage() {
               <th className="px-4 py-3 font-medium">Lot number</th>
               <th className="px-4 py-3 font-medium">Source</th>
               <th className="px-4 py-3 font-medium">Rough weight</th>
+              <th className="px-4 py-3 font-medium">Purchase cost</th>
               <th className="px-4 py-3 font-medium">Stones</th>
               <th className="px-4 py-3 font-medium">Date</th>
             </tr>
@@ -40,7 +41,7 @@ export default async function LottingPage() {
           <tbody>
             {lots.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
                   No lots yet.{" "}
                   <Link href="/lotting/new" className="underline">
                     Log the first one
@@ -58,6 +59,18 @@ export default async function LottingPage() {
                 </td>
                 <td className="px-4 py-3 text-zinc-500">{lot.sourceParty?.name ?? "—"}</td>
                 <td className="px-4 py-3 text-zinc-500">{lot.roughWeight ?? "—"} ct</td>
+                <td className="px-4 py-3 text-zinc-500">
+                  {lot.purchaseCost !== null ? (
+                    <>
+                      {lot.purchaseCost.toLocaleString()}
+                      {lot.roughWeight ? (
+                        <span className="text-zinc-400"> (≈ {(lot.purchaseCost / lot.roughWeight).toFixed(2)}/ct)</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td className="px-4 py-3 text-zinc-800">{lot._count.products}</td>
                 <td className="px-4 py-3 text-zinc-500">{lot.createdAt.toLocaleDateString()}</td>
               </tr>
