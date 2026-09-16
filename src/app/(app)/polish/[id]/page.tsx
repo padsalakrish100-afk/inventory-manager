@@ -6,6 +6,7 @@ import { SaleForm } from "./sale-form";
 import { BarcodeLabel, PrintLabelButton } from "@/components/barcode-label";
 import { UndoTransferButton } from "./undo-transfer-button";
 import { POLISH_STATUS_LABELS, POLISH_STATUS_STYLES } from "@/lib/polish-status";
+import { formatMoney } from "@/lib/format";
 
 export default async function PolishedStoneDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -16,7 +17,12 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
         buyer: true,
         sourceProduct: {
           include: {
-            lot: { include: { sourceParty: true } },
+            lot: {
+              include: {
+                sourceParty: true,
+                products: { include: { movements: { orderBy: { issueDate: "asc" }, take: 1 } } },
+              },
+            },
             movements: { include: { party: true }, orderBy: { issueDate: "asc" } },
           },
         },
@@ -30,6 +36,35 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
   if (!polished) notFound();
 
   const source = polished.sourceProduct;
+  const lot = source.lot;
+
+  // Labor cost: sum of what was actually paid across every process this
+  // stone went through — already recorded per movement at issue time.
+  const laborMovements = source.movements.filter((m) => m.laborCost !== null);
+  const laborCostSum = laborMovements.reduce((sum, m) => sum + (m.laborCost ?? 0), 0);
+  const laborCostHint =
+    laborMovements.length > 0
+      ? `Auto: ${formatMoney(laborCostSum, polished.currency)} total across ${laborMovements.length} process${laborMovements.length === 1 ? "" : "es"}`
+      : null;
+
+  // Rough cost: this stone's original (pre-manufacturing) weight is its
+  // earliest movement's issue weight, or its current weight if it was
+  // never issued anywhere before reaching Polish. Allocated as a share of
+  // the lot's total purchase cost, proportional to that weight.
+  function originalWeightOf(p: { caratWeight: number | null; movements: { issueWeight: number | null }[] }) {
+    return p.movements.length > 0 ? p.movements[0].issueWeight : p.caratWeight;
+  }
+  const thisStoneOriginalWeight = originalWeightOf(source);
+
+  let roughCostSuggestion: number | null = null;
+  let roughCostHint: string | null = null;
+  if (lot?.purchaseCost && thisStoneOriginalWeight) {
+    const totalWeight = lot.products.reduce((sum, p) => sum + (originalWeightOf(p) ?? 0), 0);
+    if (totalWeight > 0) {
+      roughCostSuggestion = lot.purchaseCost * (thisStoneOriginalWeight / totalWeight);
+      roughCostHint = `Auto: ${formatMoney(lot.purchaseCost, polished.currency)} lot cost × ${thisStoneOriginalWeight}/${totalWeight.toFixed(2)} ct share`;
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -84,11 +119,12 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
             soldPrice: polished.soldPrice,
             soldDate: polished.soldDate ? polished.soldDate.toISOString().slice(0, 10) : null,
             paymentStatus: polished.paymentStatus,
-            roughCostAlloc: polished.roughCostAlloc,
-            laborCost: polished.laborCost,
+            roughCostAlloc: polished.roughCostAlloc ?? roughCostSuggestion,
+            laborCost: polished.laborCost ?? (laborCostSum > 0 ? laborCostSum : null),
             certCost: polished.certCost,
             otherCost: polished.otherCost,
           }}
+          costHints={{ roughCostAlloc: roughCostHint, laborCost: laborCostHint }}
         />
       </section>
 

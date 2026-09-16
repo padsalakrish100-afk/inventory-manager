@@ -285,6 +285,10 @@ model Lot {
   status         LotStatus @default(ROUGH)
   createdAt      DateTime  @default(now())
 
+  // Total price paid for the whole rough lot — used to allocate a rough
+  // cost share to each polished stone, proportional to its rough weight.
+  purchaseCost Float?
+
   // Who the rough came from — a tender or a supplying party.
   sourceParty   Party?  @relation("LotSource", fields: [sourcePartyId], references: [id])
   sourcePartyId String?

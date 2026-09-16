@@ -32,11 +32,16 @@ export async function createLot(
   const sourcePartyName = String(formData.get("sourceParty") ?? "").trim();
   const roughWeightRaw = String(formData.get("roughWeight") ?? "").trim();
   const roughWeight = roughWeightRaw ? Number(roughWeightRaw) : null;
+  const purchaseCostRaw = String(formData.get("purchaseCost") ?? "").trim();
+  const purchaseCost = purchaseCostRaw ? Number(purchaseCostRaw) : null;
   const stoneCount = Math.trunc(Number(formData.get("stoneCount") ?? 0));
 
   if (!sourcePartyName) return "Source (tender or party) is required.";
   if (roughWeight !== null && (!Number.isFinite(roughWeight) || roughWeight <= 0)) {
     return "Rough weight must be a positive number.";
+  }
+  if (purchaseCost !== null && (!Number.isFinite(purchaseCost) || purchaseCost < 0)) {
+    return "Purchase cost must be a non-negative number.";
   }
   if (!Number.isInteger(stoneCount) || stoneCount < 1 || stoneCount > 5000) {
     return "Number of stones must be between 1 and 5000.";
@@ -51,7 +56,7 @@ export async function createLot(
   const lotNumber = await nextLotNumber();
 
   const lot = await prisma.lot.create({
-    data: { lotNumber, roughWeight, sourcePartyId: sourceParty.id },
+    data: { lotNumber, roughWeight, purchaseCost, sourcePartyId: sourceParty.id },
   });
 
   const data = Array.from({ length: stoneCount }, (_, i) => {
@@ -122,5 +127,27 @@ export async function updateStoneWeight(productId: string, weightRaw: string): P
   await prisma.product.update({ where: { id: productId }, data: { caratWeight: weight } });
 
   if (product.lotId) revalidatePath(`/lotting/${product.lotId}`);
+  return {};
+}
+
+// Saves the total purchase cost for a lot — feeds the rough-cost allocation
+// suggested on each of its stones' Polish sale forms (split proportionally
+// by rough weight), editable any time as the real figure becomes known.
+export async function updateLotPurchaseCost(lotId: string, costRaw: string): Promise<{ error?: string }> {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+
+  const trimmed = costRaw.trim();
+  const cost = trimmed ? Number(trimmed) : null;
+  if (cost !== null && (!Number.isFinite(cost) || cost < 0)) {
+    return { error: "Purchase cost must be a non-negative number." };
+  }
+
+  const lot = await prisma.lot.findUnique({ where: { id: lotId }, select: { id: true } });
+  if (!lot) return { error: "Lot not found." };
+
+  await prisma.lot.update({ where: { id: lotId }, data: { purchaseCost: cost } });
+
+  revalidatePath(`/lotting/${lotId}`);
   return {};
 }

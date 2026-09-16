@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { PROCESS_LABELS, PROCESS_STYLES } from "@/lib/process";
 import { DeleteLotButton } from "./delete-lot-button";
 import { WeightCell } from "./weight-cell";
+import { PurchaseCostEditor } from "./purchase-cost-editor";
 
 export default async function LotDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -35,9 +36,12 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">Lot {lot.lotNumber}</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Source: {lot.sourceParty?.name ?? "—"} &middot; Rough weight: {lot.roughWeight ?? "—"} ct &middot;{" "}
-            {lot.createdAt.toLocaleDateString()}
+          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-zinc-500">
+            <span>Source: {lot.sourceParty?.name ?? "—"}</span>
+            <span>&middot; Rough weight: {lot.roughWeight ?? "—"} ct</span>
+            <span>&middot; Purchase cost:</span>
+            <PurchaseCostEditor lotId={lot.id} initialCost={lot.purchaseCost} roughWeight={lot.roughWeight} />
+            <span>&middot; {lot.createdAt.toLocaleDateString()}</span>
           </p>
         </div>
         <div className="flex items-center gap-3">

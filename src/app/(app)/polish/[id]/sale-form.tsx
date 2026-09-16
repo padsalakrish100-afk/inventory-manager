@@ -20,14 +20,21 @@ type Defaults = {
   otherCost: number | null;
 };
 
+type CostHints = {
+  roughCostAlloc: string | null;
+  laborCost: string | null;
+};
+
 export function SaleForm({
   id,
   defaults,
   buyerNames,
+  costHints,
 }: {
   id: string;
   defaults: Defaults;
   buyerNames: string[];
+  costHints?: CostHints;
 }) {
   const boundAction = updateSaleInfo.bind(null, id);
   const [error, formAction, pending] = useActionState(boundAction, undefined);
@@ -204,12 +211,14 @@ export function SaleForm({
             name="roughCostAlloc"
             value={costs.roughCostAlloc}
             onChange={(v) => setCosts((c) => ({ ...c, roughCostAlloc: v }))}
+            hint={costHints?.roughCostAlloc ?? null}
           />
           <CostField
             label="Labor cost"
             name="laborCost"
             value={costs.laborCost}
             onChange={(v) => setCosts((c) => ({ ...c, laborCost: v }))}
+            hint={costHints?.laborCost ?? null}
           />
           <CostField
             label="Certification cost"
@@ -263,11 +272,13 @@ function CostField({
   name,
   value,
   onChange,
+  hint,
 }: {
   label: string;
   name: string;
   value: number | null;
   onChange: (value: number | null) => void;
+  hint?: string | null;
 }) {
   return (
     <div>
@@ -284,6 +295,7 @@ function CostField({
         onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
         className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
       />
+      {hint && <p className="mt-1 text-xs text-zinc-400">{hint}</p>}
     </div>
   );
 }
