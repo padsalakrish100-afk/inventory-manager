@@ -28,6 +28,8 @@ export type Permission =
   | "stock.view" // Polish / polished stock
   | "stock.edit"
   | "sales.reports"
+  | "memo.manage" // sales memos (consignment): issue, return
+  | "sales.manage" // invoices, receipts, receivables
   | "costs.view" // cost, profit, rough price, labour amounts
   | "admin"; // settings, parties, users, audit log
 
@@ -44,6 +46,8 @@ const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "stock.view",
     "stock.edit",
     "sales.reports",
+    "memo.manage",
+    "sales.manage",
     "costs.view",
     "admin",
   ],
@@ -59,9 +63,11 @@ const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "stock.view",
     "stock.edit",
     "sales.reports",
+    "memo.manage",
+    "sales.manage",
   ],
   OPERATOR: ["stones.view", "mfg.view", "mfg.issueReturn", "plans.edit"],
-  SALES: ["stones.view", "stock.view"],
+  SALES: ["stones.view", "stock.view", "memo.manage"],
 };
 
 export const ROLE_LABELS: Record<AppRole, string> = {

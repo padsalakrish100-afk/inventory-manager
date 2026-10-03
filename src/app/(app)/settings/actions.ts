@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/authz";
 import { TX_OPTIONS, writeAudit } from "@/lib/audit";
 import { inBothCurrencies } from "@/lib/money";
-import { formToObject, parseInput, zRequiredText } from "@/lib/validation";
+import { formToObject, parseInput, zOptionalText, zRequiredText } from "@/lib/validation";
 import { dateInputToStartOfDayIST } from "@/lib/dates";
 import { CUT_STYLES } from "@/lib/cuts";
 
@@ -403,5 +403,36 @@ export async function updateAttribute(
     throw err;
   }
   revalidatePath("/settings/attributes");
+  return "Saved.";
+}
+
+// ─── Company details and document wording (memos, invoices) ─────────────────
+
+const companySchema = z.object({
+  companyName: zRequiredText("Company name", 120),
+  companyAddress: zOptionalText(500),
+  companyPhone: zOptionalText(60),
+  companyEmail: zOptionalText(120),
+  companyTaxInfo: zOptionalText(300),
+  bankDetails: zOptionalText(1000),
+  memoTerms: zOptionalText(4000),
+  invoiceTerms: zOptionalText(4000),
+  invoiceWarranty: zOptionalText(2000),
+  memoDueDays: z.coerce.number().int("Days must be a whole number.").min(1).max(365),
+  invoiceDueDays: z.coerce.number().int("Days must be a whole number.").min(0).max(365),
+});
+
+export async function updateCompanySettings(_prev: string | undefined, formData: FormData): Promise<string | undefined> {
+  const viewer = await requirePermission("admin");
+  const raw = formToObject(formData);
+  const input = Object.fromEntries(Object.keys(companySchema.shape).map((k) => [k, typeof raw[k] === "string" ? raw[k] : ""]));
+  const parsed = parseInput(companySchema, input);
+  if (!parsed.ok) return parsed.error;
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.setting.upsert({ where: { id: "singleton" }, create: {}, update: {} });
+    const after = await tx.setting.update({ where: { id: "singleton" }, data: parsed.data });
+    await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "Setting", entityId: "singleton", before, after });
+  });
+  revalidatePath("/settings/company");
   return "Saved.";
 }

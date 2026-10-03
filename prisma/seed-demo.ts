@@ -192,6 +192,40 @@ async function main() {
     await prisma.rapaportPrice.createMany({ data: rap.rows.map((r) => ({ ...r, listId: list.id })) });
   }
 
+  // Phase 6: polished stones in stock to put on memo and invoice.
+  const demoPolished = [
+    { stockId: "D-0001", cutStyle: "OLD_MINE", shape: "Cushion", ct: 1.05, color: "J", clarity: "VS1", asking: 4200, cost: 2600 },
+    { stockId: "D-0002", cutStyle: "OLD_EUROPEAN", shape: "Round", ct: 2.11, color: "K", clarity: "SI1", asking: 9800, cost: 6100 },
+    { stockId: "D-0003", cutStyle: "ROSE", shape: "Pear", ct: 0.82, color: "I", clarity: "SI2", asking: 1600, cost: 900 },
+  ];
+  const usdInr = await prisma.exchangeRate.findFirst({ orderBy: { date: "desc" } });
+  for (const p of demoPolished) {
+    if (await prisma.polishedStone.findUnique({ where: { stockId: p.stockId } })) continue;
+    const stone = await prisma.product.create({
+      data: {
+        sku: `DEMO-PS-${p.stockId}`, name: `DEMO polished ${p.stockId}`, stock: 1, caratWeight: p.ct,
+        roughWeight: (p.ct * 1.9).toFixed(3), status: "IN_STOCK", stockLocation: "OFFICE_SAFE",
+      },
+    });
+    await prisma.polishedStone.create({
+      data: {
+        stockId: p.stockId, sourceProductId: stone.id, cutStyle: p.cutStyle, shape: p.shape, caratWeight: p.ct,
+        color: p.color, clarity: p.clarity, askingPrice: p.asking, currency: "USD", status: "AVAILABLE",
+      },
+    });
+    const fx = usdInr?.usdInr.toString() ?? null;
+    await prisma.costEntry.create({
+      data: {
+        stoneId: stone.id, type: "ROUGH", date: new Date("2026-09-01T12:00:00+05:30"), amount: p.cost.toFixed(2), currency: "USD",
+        fxRate: fx, amountUsd: p.cost.toFixed(2), amountInr: fx ? (p.cost * Number(fx)).toFixed(2) : null,
+        sourceType: "MANUAL", note: "DEMO rough cost", createdById: adminId,
+      },
+    });
+    await prisma.stoneEvent.create({
+      data: { stoneId: stone.id, type: "CREATED", userId: adminId, weightAfter: p.ct.toFixed(3), summary: `DEMO polished stone ${p.stockId}` },
+    });
+  }
+
   const lotNumber = "DEMO-LOT-001";
   if (await prisma.lot.findUnique({ where: { lotNumber } })) {
     await backfillDemoMovements();

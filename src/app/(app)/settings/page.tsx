@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/settings/departments", title: "Departments", description: "Factory departments that operators are assigned to." },
   { href: "/settings/loss-limits", title: "Loss limits", description: "Allowed loss % per stage, and per karigar." },
   { href: "/settings/attributes", title: "Cut details", description: "Extra grading fields per cut style (Old Mine, Rose…)." },
+  { href: "/settings/company", title: "Company & documents", description: "Name, address, bank details and terms on memos and invoices." },
   { href: "/settings/fx", title: "Exchange rates", description: "Daily USD/INR rate stored on every money entry." },
   { href: "/users", title: "Users", description: "Logins, roles, cost visibility, departments." },
   { href: "/admin/audit", title: "Audit log", description: "Every change: who, when, old → new." },

@@ -19,10 +19,27 @@ type Defaults = {
 
 // Status, listing and sale details. Costs live in the stone's cost ledger
 // (shown separately to people who can see costs), not on this form.
-export function SaleForm({ id, defaults, buyerNames }: { id: string; defaults: Defaults; buyerNames: string[] }) {
+export function SaleForm({
+  id,
+  defaults,
+  buyerNames,
+  locked = false,
+  allStatuses = false,
+}: {
+  id: string;
+  defaults: Defaults;
+  buyerNames: string[];
+  // A live memo or invoice owns the status and sale details.
+  locked?: boolean;
+  // Admins may still correct older sale records by hand.
+  allStatuses?: boolean;
+}) {
   const boundAction = updateSaleInfo.bind(null, id);
   const [error, onSubmit, pending] = useFormAction(boundAction, undefined);
   const [status, setStatus] = useState(defaults.status);
+  const statusOptions = POLISH_STATUS_OPTIONS.filter(
+    (s) => allStatuses || s.value === "AVAILABLE" || s.value === "RESERVED" || s.value === defaults.status,
+  );
 
   return (
     <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-6">
@@ -31,6 +48,9 @@ export function SaleForm({ id, defaults, buyerNames }: { id: string; defaults: D
           Status &amp; listing
         </legend>
         <div className="grid grid-cols-2 gap-4">
+          {locked ? (
+            <input type="hidden" name="status" value={defaults.status} />
+          ) : (
           <div>
             <label htmlFor="status" className="block text-sm font-medium text-zinc-700">
               Status
@@ -42,13 +62,14 @@ export function SaleForm({ id, defaults, buyerNames }: { id: string; defaults: D
               onChange={(e) => setStatus(e.target.value)}
               className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
             >
-              {POLISH_STATUS_OPTIONS.map((s) => (
+              {statusOptions.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
                 </option>
               ))}
             </select>
           </div>
+          )}
           <div>
             <label htmlFor="location" className="block text-sm font-medium text-zinc-700">
               Location note
@@ -108,7 +129,7 @@ export function SaleForm({ id, defaults, buyerNames }: { id: string; defaults: D
         </div>
       </fieldset>
 
-      {status === "SOLD" && (
+      {status === "SOLD" && !locked && (
         <fieldset className="flex flex-col gap-4 border-0 p-0">
           <legend className="mb-1 w-full border-b border-zinc-200 pb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
             Sale details

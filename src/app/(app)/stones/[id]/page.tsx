@@ -35,6 +35,9 @@ const EVENT_STYLES: Record<string, string> = {
   SPLIT: "bg-fuchsia-500",
   EXCESS_REVIEWED: "bg-emerald-700",
   SOLD: "bg-zinc-900",
+  MEMO: "bg-purple-500",
+  MEMO_RETURN: "bg-purple-300",
+  SALE_VOID: "bg-red-400",
 };
 
 function ct(value: unknown): string {

@@ -11,6 +11,8 @@ const navItems: { href: string; label: string; permission: Permission }[] = [
   { href: "/manufacturing", label: "Manufacturing", permission: "mfg.view" },
   { href: "/karigars", label: "Karigars", permission: "karigars.manage" },
   { href: "/polish", label: "Polish", permission: "stock.view" },
+  { href: "/sales/memos", label: "Sales", permission: "memo.manage" },
+  { href: "/finance/receivables", label: "Finance", permission: "sales.manage" },
   { href: "/costing", label: "Costing", permission: "costs.view" },
   { href: "/settings", label: "Settings", permission: "admin" },
 ];

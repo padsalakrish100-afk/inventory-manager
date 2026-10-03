@@ -169,6 +169,30 @@ export async function updateSaleInfo(
       if (!before) throw new UserError("Stock entry not found.");
       const product = before.sourceProduct;
 
+      // Memos and invoices own the on-memo and sold states. While one is
+      // live, this form only changes the listing (asking/minimum price,
+      // location note); otherwise moving into or out of those states needs
+      // a memo or invoice (an admin may still correct an old record).
+      const [liveInvoiceLine, outMemoLine] = await Promise.all([
+        tx.invoiceLine.findFirst({ where: { stoneId: product.id, invoice: { voidedAt: null } }, select: { id: true } }),
+        tx.salesMemoLine.findFirst({ where: { stoneId: product.id, status: "OUT", memo: { voidedAt: null } }, select: { id: true } }),
+      ]);
+      if (liveInvoiceLine || outMemoLine) {
+        const after = await tx.polishedStone.update({
+          where: { id: polishedStoneId },
+          data: { location: d.location, askingPrice: money(d.askingPrice), minPrice: d.minPrice },
+        });
+        const { sourceProduct: _sp, ...polishedBefore } = before;
+        await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "PolishedStone", entityId: polishedStoneId, before: polishedBefore, after });
+        return;
+      }
+      const docOwned = ["SOLD", "ON_MEMO"];
+      if (before.status !== d.status && (docOwned.includes(d.status) || docOwned.includes(before.status)) && viewer.role !== "ADMIN") {
+        throw new UserError(
+          d.status === "ON_MEMO" ? "Put a stone on memo from Sales → Memos." : d.status === "SOLD" ? "Sell a stone by making an invoice in Sales → Invoices." : "Ask an admin to correct this older sale record.",
+        );
+      }
+
       // Lifecycle: only valid status moves are allowed (an admin can correct
       // a mistake in any direction).
       const nextStoneStatus = stoneStatusFromPolishStatus(d.status);
@@ -267,6 +291,9 @@ export async function undoTransfer(polishedStoneId: string): Promise<string> {
     if (!polished) throw new Error("Stock entry not found.");
     if (polished.status === "SOLD" || polished.soldPrice !== null) {
       throw new Error("This stone has a sale recorded — it can't be sent back to Manufacturing.");
+    }
+    if (polished.status === "ON_MEMO" || (await tx.salesMemoLine.count({ where: { stoneId: polished.sourceProductId, status: "OUT" } })) > 0) {
+      throw new Error("This stone is out on memo — return it first.");
     }
 
     await tx.polishedStone.delete({ where: { id: polishedStoneId } });

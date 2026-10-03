@@ -16,7 +16,10 @@ export type StoneEventType =
   | "STATUS"
   | "LOCATION"
   | "WEIGHT"
-  | "SOLD";
+  | "SOLD"
+  | "MEMO"
+  | "MEMO_RETURN"
+  | "SALE_VOID";
 
 export type StoneEventInput = {
   stoneId: string;

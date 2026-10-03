@@ -54,6 +54,17 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
   if (!polished) notFound();
 
   const source = polished.sourceProduct;
+  const [liveInvoiceLine, outMemoLine] = await Promise.all([
+    prisma.invoiceLine.findFirst({
+      where: { stoneId: source.id, invoice: { voidedAt: null } },
+      select: { invoice: { select: { id: true, invoiceNo: true, date: true, party: { select: { name: true } } } } },
+    }),
+    prisma.salesMemoLine.findFirst({
+      where: { stoneId: source.id, status: "OUT", memo: { voidedAt: null } },
+      select: { memo: { select: { id: true, memoNo: true, dueDate: true, party: { select: { name: true } } } } },
+    }),
+  ]);
+  const docLocked = Boolean(liveInvoiceLine || outMemoLine);
   const [attributeDefs, media, certFiles, rap, usdInr] = await Promise.all([
     prisma.attributeDefinition.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }] }),
     prisma.attachment.findMany({
@@ -250,8 +261,18 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
 
       <section className="flex max-w-2xl flex-col gap-4">
         <h2 className="text-lg font-semibold text-zinc-900">{showCosts ? "Sales & cost" : "Sales"}</h2>
+        <SalesDocs
+          stoneId={source.id}
+          status={source.status}
+          invoice={liveInvoiceLine?.invoice ?? null}
+          memo={outMemoLine?.memo ?? null}
+          canMemo={can(viewer, "memo.manage")}
+          canInvoice={can(viewer, "sales.manage")}
+        />
         <SaleForm
           id={polished.id}
+          locked={docLocked}
+          allStatuses={viewer.role === "ADMIN"}
           buyerNames={parties.map((p) => p.name)}
           defaults={{
             status: polished.status,
@@ -354,6 +375,77 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+// Where the stone stands in sales: its memo or invoice, or buttons to make one.
+function SalesDocs({
+  stoneId,
+  status,
+  invoice,
+  memo,
+  canMemo,
+  canInvoice,
+}: {
+  stoneId: string;
+  status: string;
+  invoice: { id: string; invoiceNo: string; date: Date; party: { name: string } } | null;
+  memo: { id: string; memoNo: string; dueDate: Date; party: { name: string } } | null;
+  canMemo: boolean;
+  canInvoice: boolean;
+}) {
+  const btn = "flex min-h-12 items-center rounded-lg border border-zinc-300 bg-white px-4 text-base font-medium text-zinc-800 hover:bg-zinc-50";
+  if (invoice) {
+    return (
+      <p className="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-700">
+        Sold to {invoice.party.name} on{" "}
+        {canInvoice ? (
+          <Link href={`/sales/invoices/${invoice.id}`} className="font-mono underline">
+            {invoice.invoiceNo}
+          </Link>
+        ) : (
+          <span className="font-mono">{invoice.invoiceNo}</span>
+        )}{" "}
+        · {formatDate(invoice.date)}
+      </p>
+    );
+  }
+  if (memo) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm text-purple-900">
+        <p>
+          On memo{" "}
+          {canMemo ? (
+            <Link href={`/sales/memos/${memo.id}`} className="font-mono underline">
+              {memo.memoNo}
+            </Link>
+          ) : (
+            <span className="font-mono">{memo.memoNo}</span>
+          )}{" "}
+          with {memo.party.name} · due {formatDate(memo.dueDate)}
+        </p>
+        {canInvoice && (
+          <Link href={`/sales/invoices/new?memo=${memo.id}&stones=${stoneId}`} className={btn}>
+            Invoice it
+          </Link>
+        )}
+      </div>
+    );
+  }
+  if (status !== "IN_STOCK" || (!canMemo && !canInvoice)) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {canMemo && (
+        <Link href={`/sales/memos/new?stone=${stoneId}`} className={btn}>
+          Put on memo
+        </Link>
+      )}
+      {canInvoice && (
+        <Link href={`/sales/invoices/new?stone=${stoneId}`} className={btn}>
+          Sell (invoice)
+        </Link>
+      )}
     </div>
   );
 }

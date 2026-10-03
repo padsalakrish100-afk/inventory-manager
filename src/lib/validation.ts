@@ -31,6 +31,12 @@ export const zOptionalMoney = (label = "Amount") =>
 
 export const zCurrency = z.enum(["USD", "INR"]);
 
+// INR per 1 USD; blank means "use the rate on file for the date".
+export const zOptionalFx = z.union([
+  z.literal("").transform(() => null),
+  trimmed.regex(/^\d{1,4}(\.\d{1,4})?$/, "Exchange rate must be a number like 88.25."),
+]);
+
 export const zId = z.string().trim().min(1).max(64);
 
 export const zDateString = (label = "Date") =>

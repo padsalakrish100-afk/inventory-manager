@@ -34,6 +34,19 @@ model Setting {
   // How a shared cost (rough purchase, job-work bill, overhead) is divided
   // between stones: WEIGHT (by carats, default) or EQUAL (per stone).
   costAllocationMethod String @default("WEIGHT")
+
+  // Printed on memos and invoices (Settings → Company & documents).
+  companyName     String  @default("Opulent Diam")
+  companyAddress  String?
+  companyPhone    String?
+  companyEmail    String?
+  companyTaxInfo  String?
+  bankDetails     String?
+  memoTerms       String?
+  invoiceTerms    String?
+  invoiceWarranty String?
+  memoDueDays     Int     @default(14)
+  invoiceDueDays  Int     @default(30)
 }
 
 model User {
@@ -131,16 +144,18 @@ model Product {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions  Transaction[]
-  processLogs   ProcessLog[]
-  movements     ProcessMovement[]
-  polishedStone PolishedStone?
-  events        StoneEvent[]
-  breakages     Breakage[]
-  splits        StoneSplit[]
-  plans         StonePlan[]
-  costEntries   CostEntry[]       @relation("CostStone")
-  costsSplitOut CostEntry[]       @relation("CostFromStone")
+  transactions   Transaction[]
+  processLogs    ProcessLog[]
+  movements      ProcessMovement[]
+  polishedStone  PolishedStone?
+  events         StoneEvent[]
+  breakages      Breakage[]
+  splits         StoneSplit[]
+  plans          StonePlan[]
+  costEntries    CostEntry[]       @relation("CostStone")
+  costsSplitOut  CostEntry[]       @relation("CostFromStone")
+  salesMemoLines SalesMemoLine[]
+  invoiceLines   InvoiceLine[]
 
   @@index([lotId])
   @@index([currentPartyId])
@@ -605,6 +620,10 @@ model Party {
   payrollRuns        PayrollRun[]
   jobWorkBills       JobWorkBill[]
   roughPurchases     RoughPurchase[]
+  salesMemos         SalesMemo[]
+  invoices           Invoice[]           @relation("InvoiceParty")
+  brokeredInvoices   Invoice[]           @relation("InvoiceBroker")
+  payments           Payment[]
 
   transactions         Transaction[]
   lotExpenses          LotExpense[]
@@ -959,19 +978,20 @@ model PayrollRun {
 
 // An outside factory's (job-worker's) bill for work on issued stones.
 model JobWorkBill {
-  id          String            @id @default(cuid())
-  party       Party             @relation(fields: [partyId], references: [id])
+  id          String              @id @default(cuid())
+  party       Party               @relation(fields: [partyId], references: [id])
   partyId     String
   billNo      String
   date        DateTime
-  amount      Decimal           @db.Decimal(14, 2)
-  currency    String            @default("INR")
-  fxRate      Decimal?          @db.Decimal(12, 4)
+  amount      Decimal             @db.Decimal(14, 2)
+  currency    String              @default("INR")
+  fxRate      Decimal?            @db.Decimal(12, 4)
   notes       String?
   createdById String
   voidedAt    DateTime?
-  createdAt   DateTime          @default(now())
+  createdAt   DateTime            @default(now())
   movements   ProcessMovement[]
+  allocations PaymentAllocation[]
 
   @@unique([partyId, billNo])
   @@index([date])
@@ -991,26 +1011,27 @@ model ExchangeRate {
 // A rough purchase from a vendor or tender. Invoice and Kimberley Process
 // certificate files are Attachments (ROUGH_INVOICE / ROUGH_KP).
 model RoughPurchase {
-  id            String        @id @default(cuid())
-  purchaseNo    String        @unique
-  party         Party         @relation(fields: [partyId], references: [id])
+  id            String              @id @default(cuid())
+  purchaseNo    String              @unique
+  party         Party               @relation(fields: [partyId], references: [id])
   partyId       String
   date          DateTime
   source        String?
-  totalCarats   Decimal       @db.Decimal(12, 3)
+  totalCarats   Decimal             @db.Decimal(12, 3)
   pieces        Int
-  pricePerCarat Decimal       @db.Decimal(14, 2)
-  totalAmount   Decimal       @db.Decimal(14, 2)
+  pricePerCarat Decimal             @db.Decimal(14, 2)
+  totalAmount   Decimal             @db.Decimal(14, 2)
   currency      String
-  fxRate        Decimal?      @db.Decimal(12, 4)
+  fxRate        Decimal?            @db.Decimal(12, 4)
   invoiceNo     String?
   kpCertNo      String?
   dueDate       DateTime?
   notes         String?
   createdById   String
-  createdAt     DateTime      @default(now())
+  createdAt     DateTime            @default(now())
   voidedAt      DateTime?
   packets       RoughPacket[]
+  allocations   PaymentAllocation[]
 
   @@index([partyId, date])
   @@index([date])
@@ -1163,4 +1184,166 @@ model RapaportPrice {
   pricePerCt Decimal      @db.Decimal(12, 2)
 
   @@index([listId, shapeGroup, color, clarity])
+}
+
+// ─── ERP sales, memo and payments ───────────────────────────────────────────
+
+// Stones sent to a customer on consignment (separate from the manufacturing
+// issue voucher, `Memo`). Lines come back, or become an invoice.
+model SalesMemo {
+  id          String          @id @default(cuid())
+  memoNo      String          @unique
+  party       Party           @relation(fields: [partyId], references: [id])
+  partyId     String
+  date        DateTime
+  dueDate     DateTime
+  terms       String?
+  currency    String
+  fxRate      Decimal?        @db.Decimal(12, 4)
+  // OPEN (all out) | PARTIAL (some back or sold) | CLOSED (nothing out)
+  status      String          @default("OPEN")
+  notes       String?
+  createdById String
+  createdAt   DateTime        @default(now())
+  voidedAt    DateTime?
+  voidReason  String?
+  lines       SalesMemoLine[]
+
+  @@index([partyId, date])
+  @@index([status, dueDate])
+}
+
+model SalesMemoLine {
+  id            String       @id @default(cuid())
+  memo          SalesMemo    @relation(fields: [memoId], references: [id])
+  memoId        String
+  stone         Product      @relation(fields: [stoneId], references: [id])
+  stoneId       String
+  carats        Decimal      @db.Decimal(12, 3)
+  pricePerCt    Decimal      @db.Decimal(14, 2)
+  amount        Decimal      @db.Decimal(14, 2)
+  // OUT | RETURNED | SOLD
+  status        String       @default("OUT")
+  returnedAt    DateTime?
+  invoiceLine   InvoiceLine? @relation(fields: [invoiceLineId], references: [id])
+  invoiceLineId String?      @unique
+
+  @@index([memoId])
+  @@index([stoneId, status])
+}
+
+model Invoice {
+  id              String              @id @default(cuid())
+  invoiceNo       String              @unique
+  party           Party               @relation("InvoiceParty", fields: [partyId], references: [id])
+  partyId         String
+  date            DateTime
+  dueDate         DateTime?
+  currency        String
+  // Nullable only for invoices made from old sale records; new invoices
+  // always carry a rate.
+  fxRate          Decimal?            @db.Decimal(12, 4)
+  broker          Party?              @relation("InvoiceBroker", fields: [brokerId], references: [id])
+  brokerId        String?
+  brokeragePct    Decimal?            @db.Decimal(7, 3)
+  brokerageAmount Decimal?            @db.Decimal(14, 2)
+  shipping        Decimal?            @db.Decimal(14, 2)
+  insurance       Decimal?            @db.Decimal(14, 2)
+  // Export / shipping details
+  shipToName      String?
+  shipToAddress   String?
+  shipToCountry   String?
+  incoterm        String?
+  hsCode          String?             @default("7102.39")
+  portOfLoading   String?
+  portOfDischarge String?
+  awbNo           String?
+  carrier         String?
+  kpCertNo        String?
+  subtotal        Decimal             @db.Decimal(14, 2)
+  total           Decimal             @db.Decimal(14, 2)
+  totalUsd        Decimal?            @db.Decimal(14, 2)
+  totalInr        Decimal?            @db.Decimal(14, 2)
+  notes           String?
+  // Made by the Phase 6 backfill from a polished stone's old sale fields.
+  isLegacy        Boolean             @default(false)
+  createdById     String?
+  createdAt       DateTime            @default(now())
+  voidedAt        DateTime?
+  voidReason      String?
+  lines           InvoiceLine[]
+  allocations     PaymentAllocation[]
+
+  @@index([partyId, date])
+  @@index([date])
+  @@index([dueDate])
+}
+
+model InvoiceLine {
+  id          String         @id @default(cuid())
+  invoice     Invoice        @relation(fields: [invoiceId], references: [id])
+  invoiceId   String
+  stone       Product        @relation(fields: [stoneId], references: [id])
+  stoneId     String
+  description String?
+  carats      Decimal        @db.Decimal(12, 3)
+  pricePerCt  Decimal        @db.Decimal(14, 2)
+  amount      Decimal        @db.Decimal(14, 2)
+  // The stone's total cost in USD when sold, for profit.
+  costUsd     Decimal?       @db.Decimal(14, 2)
+  memoLine    SalesMemoLine?
+
+  @@index([invoiceId])
+  @@index([stoneId])
+}
+
+// Money received (IN, from customers) or paid (OUT, to vendors, job-workers
+// and brokers). Allocations say which documents it settles; any rest is
+// held on account.
+model Payment {
+  id          String              @id @default(cuid())
+  paymentNo   String              @unique
+  // IN | OUT
+  direction   String
+  party       Party               @relation(fields: [partyId], references: [id])
+  partyId     String
+  date        DateTime
+  amount      Decimal             @db.Decimal(14, 2)
+  currency    String
+  fxRate      Decimal?            @db.Decimal(12, 4)
+  amountUsd   Decimal?            @db.Decimal(14, 2)
+  amountInr   Decimal?            @db.Decimal(14, 2)
+  method      String?
+  reference   String?
+  notes       String?
+  isLegacy    Boolean             @default(false)
+  createdById String?
+  createdAt   DateTime            @default(now())
+  voidedAt    DateTime?
+  voidReason  String?
+  allocations PaymentAllocation[]
+
+  @@index([partyId, date])
+  @@index([direction, date])
+}
+
+// Exactly one target is set: an invoice (a receipt, or brokerage paid to
+// its broker), a rough purchase or a job-work bill.
+model PaymentAllocation {
+  id              String         @id @default(cuid())
+  payment         Payment        @relation(fields: [paymentId], references: [id])
+  paymentId       String
+  amount          Decimal        @db.Decimal(14, 2)
+  invoice         Invoice?       @relation(fields: [invoiceId], references: [id])
+  invoiceId       String?
+  roughPurchase   RoughPurchase? @relation(fields: [roughPurchaseId], references: [id])
+  roughPurchaseId String?
+  jobWorkBill     JobWorkBill?   @relation(fields: [jobWorkBillId], references: [id])
+  jobWorkBillId   String?
+  createdAt       DateTime       @default(now())
+
+  @@index([paymentId])
+  @@index([invoiceId])
+  @@index([roughPurchaseId])
+  @@index([jobWorkBillId])
 }
