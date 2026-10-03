@@ -13,6 +13,8 @@ import { formatMoney } from "@/lib/format";
 import { describePolishFilters, polishWhere, readPolishFilters } from "@/lib/polish-filters";
 import { STONE_LOCATION_LABELS, STONE_STATUS_LABELS } from "@/lib/stone/status";
 import { CUT_STYLE_LABELS } from "@/lib/cuts";
+import { canRun, readFilters, REPORTS_BY_KEY, runReport } from "@/lib/reports";
+import { excelFormat, formatCell, isNumeric } from "@/lib/reports/format";
 
 type ReportResult = { title: string; subtitle?: string; columns: ExportColumn[]; rows: Record<string, string | number>[] };
 
@@ -360,6 +362,37 @@ export async function GET(request: Request, { params }: { params: Promise<{ repo
   }
 
   const { report } = await params;
+
+  // Reports from the report engine (Reports hub).
+  const def = REPORTS_BY_KEY.get(report);
+  if (def) {
+    if (!canRun(viewer, def)) return new Response("Forbidden", { status: 403 });
+    const { searchParams } = new URL(request.url);
+    const format = searchParams.get("format");
+    if (format !== "xlsx" && format !== "pdf") return new Response("Invalid format — use ?format=xlsx or ?format=pdf", { status: 400 });
+    const filters = readFilters(def, (k) => searchParams.get(k));
+    const data = await runReport(viewer, def, filters);
+    await writeAudit(prisma, viewer.id, {
+      action: "EXPORT",
+      entity: "Report",
+      entityId: report,
+      after: { format, rows: data.rows.length, filters },
+    });
+    const baseName = `${report}-${new Date().toISOString().slice(0, 10)}`;
+    if (format === "xlsx") {
+      const columns = data.columns.map((c) => ({ header: c.header, key: c.key, width: c.width ?? (isNumeric(c) ? 14 : 18), numFmt: excelFormat(c) }));
+      const buffer = await buildExcelBuffer(data.title, columns, data.rows, { totals: data.totals, notes: [...(data.subtitle ? [data.subtitle] : []), ...(data.notes ?? [])] });
+      return excelResponse(`${baseName}.xlsx`, buffer);
+    }
+    const text = (row: Record<string, string | number | null>) =>
+      Object.fromEntries(data.columns.map((c) => [c.key, formatCell(c, row, { plainCurrency: true })]));
+    const rows = data.rows.map(text);
+    if (data.totals) rows.push(text(data.totals));
+    const subtitle = [data.subtitle, ...(data.notes ?? [])].filter(Boolean).join(" · ").replaceAll("₹", "INR ");
+    const buffer = await buildPdfBuffer(data.title, data.columns.map((c) => ({ header: c.header, key: c.key })), rows, subtitle);
+    return pdfResponse(`${baseName}.pdf`, buffer);
+  }
+
   const permission = REPORT_PERMISSIONS[report];
   if (!permission) return new Response("Unknown report", { status: 404 });
   if (!can(viewer, permission)) return new Response("Forbidden", { status: 403 });

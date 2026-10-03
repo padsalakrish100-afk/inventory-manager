@@ -4,7 +4,7 @@ import { signOut } from "@/auth";
 import { getSettings } from "@/lib/settings";
 import { can, getViewer, ROLE_LABELS, type Permission } from "@/lib/authz";
 
-const navItems: { href: string; label: string; permission: Permission }[] = [
+const navItems: { href: string; label: string; permission: Permission; hideFor?: string[] }[] = [
   { href: "/stones", label: "Stones", permission: "stones.view" },
   { href: "/rough", label: "Rough", permission: "lots.manage" },
   { href: "/lotting", label: "Lotting", permission: "lots.manage" },
@@ -14,6 +14,7 @@ const navItems: { href: string; label: string; permission: Permission }[] = [
   { href: "/sales/memos", label: "Sales", permission: "memo.manage" },
   { href: "/finance/receivables", label: "Finance", permission: "sales.manage" },
   { href: "/costing", label: "Costing", permission: "costs.view" },
+  { href: "/reports", label: "Reports", permission: "stones.view", hideFor: ["OPERATOR"] },
   { href: "/settings", label: "Settings", permission: "admin" },
 ];
 
@@ -28,7 +29,7 @@ export default async function AppLayout({
   }
 
   const { appName } = await getSettings();
-  const visibleItems = navItems.filter((item) => can(viewer, item.permission));
+  const visibleItems = navItems.filter((item) => can(viewer, item.permission) && !item.hideFor?.includes(viewer.role));
 
   return (
     <div className="flex min-h-screen flex-col">

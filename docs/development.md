@@ -115,3 +115,9 @@ requests.
 - **Currencies:** a payment settles only documents in its own currency; anything over the amount owed is held on account. Every memo, invoice and payment stores its exchange rate (blank means the rate on file for the date).
 - **Legacy sales:** the Phase 6 backfill turned each polished stone sold through the old sale form (with a buyer and price) into a `LEGACY-<stock id>` invoice, plus a receipt if it was marked paid. Stones marked "partly paid" got an invoice with a note asking for the received amount to be recorded.
 - **Documents:** memo and invoice PDFs are served from `/api/documents/memo|invoice/<id>`. Company details, bank details, terms and the Kimberley Process warranty statement are set in Settings → Company & documents.
+
+## Dashboard and reports (Phase 7)
+
+- **Dashboard (`/`):** cards for this month's sales and profit, receivables, stock value (at asking, and at cost for cost viewers), memos, pending work, excess-loss alerts and stones by stage. Each card appears only for roles allowed to see it. Operators still land on the scanner.
+- **Report engine (`src/lib/reports`):** each report is defined once (filters, columns, totals) and drives both its page (`/reports/<key>`) and its exports (`/api/export/<key>?format=xlsx|pdf`). Columns marked `costOnly` are removed for anyone without cost visibility, in the page and in both exports. To add a report, write a `ReportDef` and register it in `src/lib/reports/index.ts`.
+- **RapNet CSV:** `/api/export/rapnet`, also linked from the stock list report. It includes stones in stock or on memo that have an asking price, priced in USD per carat. Antique cuts are mapped to RapNet shape names ("Old Miner", "European Cut", "Rose"); check them on your first upload, since RapNet's upload screen lets you re-map values. City/State/Country are set to Surat, Gujarat, India.

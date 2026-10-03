@@ -147,10 +147,8 @@ export function homePathFor(viewer: Viewer): string {
   switch (viewer.role) {
     case "OPERATOR":
       return "/scan";
-    case "SALES":
-      return "/polish";
     default:
-      return "/manufacturing";
+      return "/"; // the dashboard
   }
 }
 
