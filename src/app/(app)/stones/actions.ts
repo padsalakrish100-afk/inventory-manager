@@ -40,8 +40,8 @@ export async function moveStoneLocation(_prev: string | undefined, formData: For
       const before = await tx.product.findUnique({ where: { id: stoneId } });
       if (!before) throw new UserError("Stone not found.");
       if (before.currentProcess || before.currentStageId) throw new UserError("This stone is out for a process — return it first.");
-      if (["SOLD", "ON_MEMO", "SPLIT"].includes(before.status)) {
-        throw new UserError("A sold, on-memo, or split stone can't be moved by hand.");
+      if (["SOLD", "ON_MEMO", "SPLIT", "AT_LAB"].includes(before.status)) {
+        throw new UserError("A sold, on-memo, split, or at-lab stone can't be moved by hand — use its own flow (e.g. Back from lab).");
       }
       if (before.stockLocation === target) throw new UserError("The stone is already there.");
 
@@ -67,6 +67,7 @@ export async function moveStoneLocation(_prev: string | undefined, formData: For
 
   revalidatePath(`/stones/${stoneId}`);
   revalidatePath("/stones");
+  revalidatePath("/polish", "layout");
 }
 
 const breakageSchema = z.object({

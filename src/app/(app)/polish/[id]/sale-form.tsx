@@ -9,6 +9,7 @@ type Defaults = {
   status: string;
   location: string | null;
   askingPrice: number | null;
+  minPrice: string | null;
   currency: string;
   buyerName: string | null;
   soldPrice: number | null;
@@ -50,7 +51,7 @@ export function SaleForm({ id, defaults, buyerNames }: { id: string; defaults: D
           </div>
           <div>
             <label htmlFor="location" className="block text-sm font-medium text-zinc-700">
-              Location
+              Location note
             </label>
             <input
               id="location"
@@ -72,6 +73,21 @@ export function SaleForm({ id, defaults, buyerNames }: { id: string; defaults: D
               min={0}
               step="0.01"
               defaultValue={defaults.askingPrice ?? undefined}
+              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label htmlFor="minPrice" className="block text-sm font-medium text-zinc-700">
+              Minimum price
+            </label>
+            <input
+              id="minPrice"
+              name="minPrice"
+              type="number"
+              min={0}
+              step="0.01"
+              defaultValue={defaults.minPrice ?? undefined}
+              placeholder="Lowest you'll accept"
               className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
             />
           </div>

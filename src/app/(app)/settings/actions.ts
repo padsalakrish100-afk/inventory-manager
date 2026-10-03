@@ -8,6 +8,7 @@ import { TX_OPTIONS, writeAudit } from "@/lib/audit";
 import { inBothCurrencies } from "@/lib/money";
 import { formToObject, parseInput, zRequiredText } from "@/lib/validation";
 import { dateInputToStartOfDayIST } from "@/lib/dates";
+import { CUT_STYLES } from "@/lib/cuts";
 
 const pct = z.union([
   z.literal("").transform(() => null),
@@ -316,5 +317,91 @@ export async function updateGeneralSettings(_prev: string | undefined, formData:
     await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "Setting", entityId: "singleton", before, after });
   });
   revalidatePath("/settings");
+  return "Saved.";
+}
+
+// ─── Cut-detail attributes (antique/specialty grading fields) ───────────────
+
+const ATTRIBUTE_TYPES = ["TEXT", "NUMBER", "SELECT", "BOOLEAN"] as const;
+
+const attributeSchema = z
+  .object({
+    label: zRequiredText("Label", 60),
+    cutStyle: z.enum(["", ...CUT_STYLES.map((c) => c.value)] as [string, ...string[]], { message: "Choose a cut style." }),
+    options: z.array(z.string().trim().min(1).max(60)).max(40, "Up to 40 choices."),
+    sortOrder: z.coerce.number().int("Order must be a whole number.").min(0).max(10_000),
+    active: z.boolean(),
+  })
+  .transform((v) => ({ ...v, cutStyle: v.cutStyle === "" ? null : v.cutStyle }));
+
+function readAttribute(formData: FormData) {
+  const raw = formToObject(formData);
+  const str = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
+  return parseInput(attributeSchema, {
+    label: str("label"),
+    cutStyle: str("cutStyle"),
+    options: [...new Set(str("options").split(",").map((o) => o.trim()).filter(Boolean))],
+    sortOrder: str("sortOrder") || "0",
+    active: raw.active === "on",
+  });
+}
+
+export async function createAttribute(_prev: string | undefined, formData: FormData): Promise<string | undefined> {
+  const viewer = await requirePermission("admin");
+  const parsed = readAttribute(formData);
+  if (!parsed.ok) return parsed.error;
+  const type = String(formData.get("type") ?? "");
+  if (!(ATTRIBUTE_TYPES as readonly string[]).includes(type)) return "Choose a field type.";
+  if (type === "SELECT" && parsed.data.options.length < 2) return "A choice list needs at least two choices, separated by commas.";
+
+  // The key is what's stored on each stone, so it's fixed once created.
+  const key = parsed.data.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+  if (!key) return "Label must contain letters or numbers.";
+  const clash = await prisma.attributeDefinition.findFirst({ where: { key, cutStyle: parsed.data.cutStyle } });
+  if (clash) return "That cut style already has a field with this name.";
+
+  await prisma.$transaction(async (tx) => {
+    const attr = await tx.attributeDefinition.create({
+      data: { ...parsed.data, key, type, options: type === "SELECT" ? parsed.data.options : [] },
+    });
+    await writeAudit(tx, viewer.id, { action: "CREATE", entity: "AttributeDefinition", entityId: attr.id, after: attr });
+  });
+  revalidatePath("/settings/attributes");
+}
+
+export async function updateAttribute(
+  attributeId: string,
+  _prev: string | undefined,
+  formData: FormData,
+): Promise<string | undefined> {
+  const viewer = await requirePermission("admin");
+  const parsed = readAttribute(formData);
+  if (!parsed.ok) return parsed.error;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const before = await tx.attributeDefinition.findUnique({ where: { id: attributeId } });
+      if (!before) throw new Error("NOT_FOUND");
+      if (before.type === "SELECT" && parsed.data.options.length < 2) throw new Error("FEW_OPTIONS");
+      if (before.cutStyle !== parsed.data.cutStyle) {
+        const clash = await tx.attributeDefinition.findFirst({
+          where: { key: before.key, cutStyle: parsed.data.cutStyle, id: { not: attributeId } },
+        });
+        if (clash) throw new Error("CLASH");
+      }
+      // Type and key stay as created so values already on stones keep their meaning.
+      const after = await tx.attributeDefinition.update({
+        where: { id: attributeId },
+        data: { ...parsed.data, options: before.type === "SELECT" ? parsed.data.options : [] },
+      });
+      await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "AttributeDefinition", entityId: attributeId, before, after });
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "NOT_FOUND") return "Field not found.";
+    if (err instanceof Error && err.message === "FEW_OPTIONS") return "A choice list needs at least two choices.";
+    if (err instanceof Error && err.message === "CLASH") return "That cut style already has a field with this name.";
+    throw err;
+  }
+  revalidatePath("/settings/attributes");
   return "Saved.";
 }

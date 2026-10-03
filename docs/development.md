@@ -74,6 +74,26 @@ the viewer's permissions. Where the bytes live:
 Photos are resized/compressed in the browser before upload (≈1600 px JPEG
 plus a 320 px thumbnail).
 
+Stone videos: with a Blob store they upload straight from the phone to Blob
+(up to 250 MB, via `/api/uploads/blob`); without one they're limited to
+3 MB. Videos get a poster frame made in the browser and stream with Range
+requests.
+
+## Polished stock extras (Phase 5)
+
+- **Rapaport:** upload the price list you get from your own Rapaport/RapNet
+  subscription as CSV on Polish → Rap list. Nothing is fetched or scraped.
+  The newest list (by effective date) is used for every "vs Rap" figure, so
+  upload complete lists. `prisma/demo/rapaport-sample.csv` is an
+  illustrative file with made-up numbers for local testing only.
+- **GIA Report Check (optional):** set `GIA_REPORT_API_KEY` (and optionally
+  `GIA_REPORT_API_URL`) to show a "Check with GIA" button on GIA-certified
+  stones. Unset, the button is hidden everywhere. Not yet tested against the
+  live API, since that needs a key from GIA.
+- **Cut details:** Settings → Cut details defines the extra grading fields per
+  cut style. Fields can be deactivated but never deleted, and values already
+  saved on a stone are kept when a field is hidden.
+
 ## Conventions added in the ERP upgrade
 
 - Every server action: `requirePermission(...)` → zod (`parseInput`) →

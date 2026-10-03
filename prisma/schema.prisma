@@ -352,8 +352,31 @@ model PolishedStone {
   certCost       Float?
   otherCost      Float?
 
+  // ─── ERP grading ───
+  cutStyle      String?
+  lengthMm      Decimal?  @db.Decimal(6, 2)
+  widthMm       Decimal?  @db.Decimal(6, 2)
+  depthMm       Decimal?  @db.Decimal(6, 2)
+  tablePct      Decimal?  @db.Decimal(5, 2)
+  depthPct      Decimal?  @db.Decimal(5, 2)
+  girdle        String?
+  culet         String?
+  crownAngle    Decimal?  @db.Decimal(5, 2)
+  crownHeight   Decimal?  @db.Decimal(5, 2)
+  pavilionAngle Decimal?  @db.Decimal(5, 2)
+  pavilionDepth Decimal?  @db.Decimal(5, 2)
+  // Antique/specialty cut attributes, keyed by AttributeDefinition.key —
+  // new attributes need no migration.
+  attributes    Json?
+  certDate      DateTime?
+  // Lowest acceptable price (same currency as askingPrice).
+  minPrice      Decimal?  @db.Decimal(14, 2)
+
   @@index([buyerId])
   @@index([status])
+  @@index([shape])
+  @@index([cutStyle])
+  @@index([certNumber])
 }
 
 enum PolishStatus {
@@ -1092,4 +1115,52 @@ model OverheadPool {
   voidedAt    DateTime?
 
   @@index([month])
+}
+
+// ─── ERP polished stock ─────────────────────────────────────────────────────
+
+// An attribute that can be recorded on a polished stone (e.g. "crown height
+// impression" for Old Mine cuts). Admin-editable; values live in
+// PolishedStone.attributes. cutStyle null = shown for every cut.
+model AttributeDefinition {
+  id        String   @id @default(cuid())
+  cutStyle  String?
+  key       String
+  label     String
+  // TEXT | NUMBER | SELECT | BOOLEAN
+  type      String   @default("TEXT")
+  options   String[] @default([])
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([cutStyle, key])
+}
+
+// A Rapaport price list uploaded as CSV (never scraped). The latest list is
+// used for "vs Rap" figures.
+model RapaportList {
+  id            String          @id @default(cuid())
+  effectiveDate DateTime        @db.Date
+  fileName      String?
+  rowCount      Int
+  uploadedById  String
+  createdAt     DateTime        @default(now())
+  prices        RapaportPrice[]
+}
+
+model RapaportPrice {
+  id         String       @id @default(cuid())
+  list       RapaportList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  listId     String
+  // ROUND or PEAR — Rapaport publishes rounds and one table for all fancies.
+  shapeGroup String
+  color      String
+  clarity    String
+  caratFrom  Decimal      @db.Decimal(6, 2)
+  caratTo    Decimal      @db.Decimal(6, 2)
+  // List price in USD per carat (the sheet's "hundreds" × 100).
+  pricePerCt Decimal      @db.Decimal(12, 2)
+
+  @@index([listId, shapeGroup, color, clarity])
 }

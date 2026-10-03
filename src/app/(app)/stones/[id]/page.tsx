@@ -194,7 +194,7 @@ export default async function StoneHubPage({ params }: { params: Promise<{ id: s
             Return
           </Link>
         )}
-        {canEdit && !isOut && !["SOLD", "ON_MEMO", "SPLIT"].includes(stone.status) && (
+        {canEdit && !isOut && !["SOLD", "ON_MEMO", "SPLIT", "AT_LAB"].includes(stone.status) && (
           <MoveLocationForm
             stoneId={stone.id}
             current={stone.stockLocation}

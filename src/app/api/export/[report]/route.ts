@@ -10,7 +10,9 @@ import { POLISH_STATUS_LABELS, SALE_TYPE_LABELS, PAYMENT_STATUS_LABELS, daysInSt
 import { stoneCosts } from "@/lib/costing/ledger";
 import { PROCESS_LABELS } from "@/lib/process";
 import { formatMoney } from "@/lib/format";
-import type { PolishStatus } from "@/generated/prisma/client";
+import { describePolishFilters, polishWhere, readPolishFilters } from "@/lib/polish-filters";
+import { STONE_LOCATION_LABELS, STONE_STATUS_LABELS } from "@/lib/stone/status";
+import { CUT_STYLE_LABELS } from "@/lib/cuts";
 
 type ReportResult = { title: string; subtitle?: string; columns: ExportColumn[]; rows: Record<string, string | number>[] };
 
@@ -27,7 +29,7 @@ const REPORT_PERMISSIONS: Record<string, Permission> = {
 };
 
 function periodFrom(searchParams: URLSearchParams) {
-  const ok = (v: string | null) => Boolean(v && /^d{4}-d{2}-d{2}$/.test(v));
+  const ok = (v: string | null) => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
   const from = ok(searchParams.get("from")) ? searchParams.get("from")! : `${today.slice(0, 8)}01`;
   const to = ok(searchParams.get("to")) ? searchParams.get("to")! : today;
@@ -41,36 +43,60 @@ async function buildReport(
 ): Promise<ReportResult | null> {
   switch (report) {
     case "polish": {
-      const status = searchParams.get("status") ?? undefined;
+      const filters = readPolishFilters((k) => searchParams.get(k));
       const stones = await prisma.polishedStone.findMany({
-        where: status ? { status: status as PolishStatus } : undefined,
+        where: polishWhere(filters),
         orderBy: { createdAt: "desc" },
+        include: { sourceProduct: { select: { status: true, stockLocation: true } } },
       });
+      const dec = (v: { toString(): string } | null) => (v === null ? "" : v.toString());
       return {
         title: "Polish",
-        subtitle: status ? `Status: ${POLISH_STATUS_LABELS[status] ?? status}` : "All stones",
+        subtitle: describePolishFilters(filters),
         columns: [
           { header: "Stock ID", key: "stockId" },
+          { header: "Cut style", key: "cutStyle" },
           { header: "Shape", key: "shape" },
           { header: "Carat", key: "carat" },
           { header: "Color", key: "color" },
           { header: "Clarity", key: "clarity" },
+          { header: "Cut", key: "cut" },
+          { header: "Polish", key: "polish" },
+          { header: "Symmetry", key: "symmetry" },
+          { header: "Fluorescence", key: "fluorescence" },
+          { header: "L x W x D (mm)", key: "mm" },
+          { header: "Table %", key: "table" },
+          { header: "Depth %", key: "depth" },
+          { header: "Lab", key: "lab" },
+          { header: "Report no.", key: "certNumber" },
           { header: "Status", key: "status" },
           { header: "Location", key: "location" },
           { header: "Sale type", key: "saleType" },
           { header: "Asking price", key: "askingPrice" },
+          { header: "Minimum price", key: "minPrice" },
           { header: "Days in stock", key: "days" },
         ],
         rows: stones.map((p) => ({
           stockId: p.stockId,
+          cutStyle: p.cutStyle ? (CUT_STYLE_LABELS[p.cutStyle] ?? p.cutStyle) : "",
           shape: p.shape ?? "",
           carat: p.caratWeight ?? "",
           color: p.color ?? "",
           clarity: p.clarity ?? "",
-          status: POLISH_STATUS_LABELS[p.status] ?? p.status,
-          location: p.location ?? "",
+          cut: p.cutGrade ?? "",
+          polish: p.polishGrade ?? "",
+          symmetry: p.symmetry ?? "",
+          fluorescence: p.fluorescence ?? "",
+          mm: p.lengthMm ? `${dec(p.lengthMm)} x ${dec(p.widthMm)} x ${dec(p.depthMm)}` : (p.measurements ?? ""),
+          table: dec(p.tablePct),
+          depth: dec(p.depthPct),
+          lab: p.certLab ?? "",
+          certNumber: p.certNumber ?? "",
+          status: STONE_STATUS_LABELS[p.sourceProduct.status],
+          location: STONE_LOCATION_LABELS[p.sourceProduct.stockLocation] + (p.location ? ` (${p.location})` : ""),
           saleType: p.saleType ? SALE_TYPE_LABELS[p.saleType] : "",
           askingPrice: p.askingPrice !== null ? formatMoney(p.askingPrice, p.currency) : "",
+          minPrice: p.minPrice !== null ? formatMoney(Number(p.minPrice), p.currency) : "",
           days: daysInStock(p.createdAt),
         })),
       };

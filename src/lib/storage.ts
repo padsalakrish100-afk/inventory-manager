@@ -95,8 +95,18 @@ export async function saveAttachment(tx: Tx, input: UploadInput) {
   return attachment;
 }
 
-export async function readAttachmentBlob(url: string): Promise<{ stream: ReadableStream; contentType: string | null } | null> {
-  const result = await get(url, { access: "private" });
+// Streams a private blob. A Range header is passed through so videos can
+// seek (iPhones won't play video without range support).
+export async function readAttachmentBlob(
+  url: string,
+  range: string | null = null,
+): Promise<{ stream: ReadableStream; contentType: string | null; contentRange: string | null; contentLength: string | null } | null> {
+  const result = await get(url, { access: "private", ...(range ? { headers: { Range: range } } : {}) });
   if (!result || !result.stream) return null;
-  return { stream: result.stream, contentType: result.blob.contentType };
+  return {
+    stream: result.stream,
+    contentType: result.blob.contentType,
+    contentRange: result.headers.get("content-range"),
+    contentLength: result.headers.get("content-length"),
+  };
 }

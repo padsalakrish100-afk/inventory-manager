@@ -8,6 +8,9 @@
 // production by accident.
 import "dotenv/config";
 import bcrypt from "bcryptjs";
+import { readFileSync } from "node:fs";
+import Papa from "papaparse";
+import { parseRapCsv } from "../src/lib/rapaport";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, type ProcessName } from "../src/generated/prisma/client";
 
@@ -178,6 +181,17 @@ async function main() {
     });
   }
 
+  // Phase 5: an illustrative Rap list (made-up numbers, not real Rapaport
+  // prices) so "vs Rap" has something to compare against.
+  if ((await prisma.rapaportList.count()) === 0) {
+    const csv = Papa.parse<string[]>(readFileSync(new URL("./demo/rapaport-sample.csv", import.meta.url), "utf8"), { skipEmptyLines: true });
+    const rap = parseRapCsv(csv.data);
+    const list = await prisma.rapaportList.create({
+      data: { effectiveDate: new Date("2026-10-02T00:00:00Z"), fileName: "DEMO rapaport-sample.csv", rowCount: rap.rows.length, uploadedById: adminId },
+    });
+    await prisma.rapaportPrice.createMany({ data: rap.rows.map((r) => ({ ...r, listId: list.id })) });
+  }
+
   const lotNumber = "DEMO-LOT-001";
   if (await prisma.lot.findUnique({ where: { lotNumber } })) {
     await backfillDemoMovements();
@@ -286,8 +300,12 @@ async function main() {
   const stockNo = (await prisma.counter.upsert({ where: { key: "STOCK" }, create: { key: "STOCK", value: 1 }, update: { value: { increment: 1 } } })).value;
   const polished = await prisma.polishedStone.create({
     data: {
-      stockId: `P-${String(stockNo).padStart(4, "0")}`, sourceProductId: stones[0].id, shape: "Old Mine Cut",
-      caratWeight: 1.52, color: "H", clarity: "VS2", status: "AVAILABLE", askingPrice: 7800, currency: "USD",
+      stockId: `P-${String(stockNo).padStart(4, "0")}`, sourceProductId: stones[0].id, shape: "Cushion", cutStyle: "OLD_MINE",
+      caratWeight: 1.52, color: "H", clarity: "VS2", status: "AVAILABLE", askingPrice: 7800, minPrice: "7000.00", currency: "USD",
+      polishGrade: "Good", symmetry: "Good", fluorescence: "None", lengthMm: "6.95", widthMm: "6.60", depthMm: "4.62",
+      tablePct: "48.0", depthPct: "70.0", girdle: "Thin to Medium", culet: "Large",
+      certified: true, certLab: "GIA", certNumber: "DEMO2215543", certDate: new Date("2026-09-28T12:00:00+05:30"),
+      attributes: { crown_height: "High", culet_size: "Large", open_culet: true, outline: "Squarish" },
     },
   });
   await prisma.product.update({ where: { id: stones[0].id }, data: { status: "IN_STOCK", stockLocation: "OFFICE_SAFE" } });
