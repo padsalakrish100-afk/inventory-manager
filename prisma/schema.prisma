@@ -54,6 +54,13 @@ model User {
   stoneEvents  StoneEvent[]
   auditLogs    AuditLog[]
   attachments  Attachment[]
+
+  movementsIssued   ProcessMovement[] @relation("MovementIssuedBy")
+  movementsReturned ProcessMovement[] @relation("MovementReturnedBy")
+  movementsReviewed ProcessMovement[] @relation("MovementExcessReviewedBy")
+  movementsVoided   ProcessMovement[] @relation("MovementVoidedBy")
+  breakagesRecorded Breakage[]
+  splitsRecorded    StoneSplit[]
 }
 
 model Product {
@@ -125,6 +132,8 @@ model Product {
   movements     ProcessMovement[]
   polishedStone PolishedStone?
   events        StoneEvent[]
+  breakages     Breakage[]
+  splits        StoneSplit[]
 
   @@index([lotId])
   @@index([currentPartyId])
@@ -173,14 +182,16 @@ enum ProcessName {
 // movement is still open (returnDate null). A printed Memo groups every
 // movement created in the same Issue action.
 model ProcessMovement {
-  id           String      @id @default(cuid())
-  process      ProcessName
-  issueDate    DateTime    @default(now())
+  id           String       @id @default(cuid())
+  // The old hardcoded process. Optional since ERP stages: a stage added in
+  // Settings (e.g. Marking) has no enum value — `stage` is the source of truth.
+  process      ProcessName?
+  issueDate    DateTime     @default(now())
   issueWeight  Float?
   returnDate   DateTime?
   returnWeight Float?
   notes        String?
-  createdAt    DateTime    @default(now())
+  createdAt    DateTime     @default(now())
 
   // Set only when this stone already has a completed movement at this same
   // process — required at issue time so a re-cut, redo, etc. is explained,
@@ -207,23 +218,72 @@ model ProcessMovement {
   memo   Memo?   @relation(fields: [memoId], references: [id])
   memoId String?
 
+  // ─── ERP manufacturing ───
+  stage            ProcessStage? @relation(fields: [stageId], references: [id])
+  stageId          String?
+  // Issued from one department to a karigar (`party`) or to another
+  // department (`toDepartment`, no karigar).
+  fromDepartment   Department?   @relation("MovementFrom", fields: [fromDepartmentId], references: [id])
+  fromDepartmentId String?
+  toDepartment     Department?   @relation("MovementTo", fields: [toDepartmentId], references: [id])
+  toDepartmentId   String?
+  issuedBy         User?         @relation("MovementIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  issuedById       String?
+  returnedBy       User?         @relation("MovementReturnedBy", fields: [returnedById], references: [id], onDelete: SetNull)
+  returnedById     String?
+  issuePieces      Int           @default(1)
+  returnPieces     Int?
+  condition        String?
+  returnRemark     String?
+
+  // Loss = issue weight − return weight − tops (recovered cut pieces), in
+  // carats and as % of issue weight. `lossLimitPct` is the allowed loss that
+  // applied at return time, kept so later limit changes don't rewrite history.
+  lossWeight         Decimal?  @db.Decimal(12, 3)
+  lossPct            Decimal?  @db.Decimal(7, 3)
+  lossLimitPct       Decimal?  @db.Decimal(7, 3)
+  isExcessLoss       Boolean   @default(false)
+  excessReason       String?
+  excessReviewedBy   User?     @relation("MovementExcessReviewedBy", fields: [excessReviewedById], references: [id], onDelete: SetNull)
+  excessReviewedById String?
+  excessReviewedAt   DateTime?
+  excessReviewNote   String?
+
+  // Undone entries are voided, never deleted — they carry labour cost.
+  voidedAt   DateTime?
+  voidedBy   User?     @relation("MovementVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
+  voidedById String?
+  voidReason String?
+
+  breakages Breakage[]
+
   @@index([productId])
   @@index([partyId])
   @@index([memoId])
+  @@index([stageId])
+  @@index([issueDate])
+  @@index([returnDate])
+  @@index([isExcessLoss])
+  @@index([toDepartmentId])
 }
 
 // The printed voucher handed to a party when stones are issued to them —
 // one memo per Issue action, listing every stone (via its movements) with
 // its weight, for the party to sign as acknowledgment of receipt.
 model Memo {
-  id         String      @id @default(cuid())
-  memoNumber String      @unique
-  process    ProcessName
-  date       DateTime    @default(now())
-  createdAt  DateTime    @default(now())
+  id         String       @id @default(cuid())
+  memoNumber String       @unique
+  process    ProcessName?
+  date       DateTime     @default(now())
+  createdAt  DateTime     @default(now())
 
-  party   Party  @relation(fields: [partyId], references: [id])
-  partyId String
+  // Issued to a karigar (party) or, since ERP, to a department.
+  party        Party?        @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  partyId      String?
+  department   Department?   @relation(fields: [departmentId], references: [id])
+  departmentId String?
+  stage        ProcessStage? @relation(fields: [stageId], references: [id])
+  stageId      String?
 
   movements ProcessMovement[]
 
@@ -471,6 +531,8 @@ model Party {
 
   stonesAtLocation Product[]    @relation("StoneLocationParty")
   stoneEvents      StoneEvent[]
+  lossLimits       LossLimit[]
+  breakagesHandled Breakage[]
 
   transactions         Transaction[]
   lotExpenses          LotExpense[]
@@ -529,6 +591,10 @@ model Department {
   stages     ProcessStage[]
   users      UserDepartment[]
   stonesHere Product[]
+
+  movementsFrom ProcessMovement[] @relation("MovementFrom")
+  movementsTo   ProcessMovement[] @relation("MovementTo")
+  memos         Memo[]
 }
 
 model UserDepartment {
@@ -558,6 +624,9 @@ model ProcessStage {
   createdAt           DateTime     @default(now())
 
   stonesHere Product[]
+  movements  ProcessMovement[]
+  memos      Memo[]
+  lossLimits LossLimit[]
 
   @@index([departmentId])
 }
@@ -628,4 +697,75 @@ model Attachment {
   deletedAt    DateTime?
 
   @@index([entityType, entityId])
+}
+
+// ─── ERP manufacturing ──────────────────────────────────────────────────────
+
+// Allowed loss % for a stage, optionally for one karigar. The most specific
+// limit wins (karigar + stage over the stage default on ProcessStage); the
+// latest effectiveFrom at or before the return date applies, so changing a
+// limit never rewrites past returns.
+model LossLimit {
+  id            String       @id @default(cuid())
+  stage         ProcessStage @relation(fields: [stageId], references: [id])
+  stageId       String
+  party         Party?       @relation(fields: [partyId], references: [id])
+  partyId       String?
+  allowedPct    Decimal      @db.Decimal(7, 3)
+  effectiveFrom DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+
+  @@index([stageId, partyId, effectiveFrom])
+}
+
+// A stone damaged during manufacturing. Photos are Attachments
+// (entityType "BREAKAGE").
+model Breakage {
+  id               String           @id @default(cuid())
+  stone            Product          @relation(fields: [stoneId], references: [id])
+  stoneId          String
+  movement         ProcessMovement? @relation(fields: [movementId], references: [id])
+  movementId       String?
+  date             DateTime
+  reason           String
+  weightBefore     Decimal          @db.Decimal(12, 3)
+  weightAfter      Decimal          @db.Decimal(12, 3)
+  totalLoss        Boolean          @default(false)
+  handledByParty   Party?           @relation(fields: [handledByPartyId], references: [id])
+  handledByPartyId String?
+  recordedBy       User             @relation(fields: [recordedById], references: [id])
+  recordedById     String
+  notes            String?
+  createdAt        DateTime         @default(now())
+
+  @@index([stoneId])
+  @@index([date])
+  @@index([handledByPartyId])
+}
+
+// One rough stone split into several children (each a Product with
+// parentId set). Child rough weight — and, from Phase 4, cost — is the
+// parent's, shared by weight.
+model StoneSplit {
+  id           String   @id @default(cuid())
+  parent       Product  @relation(fields: [parentId], references: [id])
+  parentId     String
+  date         DateTime
+  parentWeight Decimal  @db.Decimal(12, 3)
+  childWeight  Decimal  @db.Decimal(12, 3)
+  method       String   @default("WEIGHT")
+  recordedBy   User     @relation(fields: [recordedById], references: [id])
+  recordedById String
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  @@index([parentId])
+}
+
+// File bytes for an Attachment when no external blob store is configured
+// (local development, or before BLOB_READ_WRITE_TOKEN is set on Vercel).
+model AttachmentData {
+  attachmentId String @id
+  data         Bytes
+  thumb        Bytes?
 }

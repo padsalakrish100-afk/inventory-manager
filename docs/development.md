@@ -60,6 +60,20 @@ the **new** schema. That makes the safe order:
 
 Never the other way round: new code on the old schema will fail at runtime.
 
+## File uploads (photos, PDFs)
+
+Uploaded files are served only through `/api/attachments/[id]`, which checks
+the viewer's permissions. Where the bytes live:
+
+- **`BLOB_READ_WRITE_TOKEN` set** (Vercel → Storage → create a Blob store and
+  connect it to the project): files go to a *private* Vercel Blob store.
+- **Not set**: files are stored in the database (`AttachmentData`). Fine for
+  local development and light use, but connect a Blob store before relying
+  on photos in production.
+
+Photos are resized/compressed in the browser before upload (≈1600 px JPEG
+plus a 320 px thumbnail).
+
 ## Conventions added in the ERP upgrade
 
 - Every server action: `requirePermission(...)` → zod (`parseInput`) →

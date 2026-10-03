@@ -1,33 +1,52 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { returnStones } from "../actions";
-import { PROCESS_LABELS, SAWING_PROCESS_VALUES } from "@/lib/process";
 import { parseScannedCode } from "@/lib/stone/scan";
 import { todayIST } from "@/lib/dates";
+import { computeLoss, isOverLimit } from "@/lib/manufacturing/loss";
+import { RETURN_CONDITIONS, RETURN_CONDITION_LABELS } from "@/lib/manufacturing/conditions";
 
-type StoneInfo = {
+type Row = {
   sku: string;
+  stage: string | null;
+  party: string | null;
+  isSawing: boolean;
+  issueWeight: number | null;
+  issuePieces: number;
+  lossLimitPct: string | null;
   weight: string;
-  process?: string;
-  party?: string;
-  startingWeight: number | null;
+  pieces: string;
+  condition: string;
+  remark: string;
+  excessReason: string;
   topsEntries: string[];
 };
+
+const inputClass =
+  "mt-1 w-full rounded-md border border-zinc-300 px-3 py-2.5 text-base focus:border-zinc-500 focus:outline-none sm:py-2 sm:text-sm";
 
 function sumTops(entries: string[]): number {
   return entries.reduce((sum, e) => sum + (Number(e) || 0), 0);
 }
 
-function recomputeWeightFromTops(row: StoneInfo): StoneInfo {
-  const isSawing = row.process && (SAWING_PROCESS_VALUES as readonly string[]).includes(row.process);
-  if (!isSawing || row.topsEntries.length === 0 || row.startingWeight === null) return row;
-  const remaining = row.startingWeight - sumTops(row.topsEntries);
+// For sawing, cutting off tops lowers the stone's weight by exactly the tops
+// removed — so the return weight follows the tops until it's typed by hand.
+function recomputeWeightFromTops(row: Row): Row {
+  if (!row.isSawing || row.topsEntries.length === 0 || row.issueWeight === null) return row;
+  const remaining = row.issueWeight - sumTops(row.topsEntries);
   return { ...row, weight: (remaining >= 0 ? remaining : 0).toFixed(3) };
 }
 
+function lossOf(row: Row) {
+  if (row.issueWeight === null || row.weight === "" || Number.isNaN(Number(row.weight))) return null;
+  const tops = row.topsEntries.length > 0 ? sumTops(row.topsEntries) : null;
+  const loss = computeLoss(row.issueWeight, row.weight, tops);
+  return { ...loss, excess: isOverLimit(loss.lossPct, row.lossLimitPct) };
+}
+
 export function ReturnForm({ initialSku }: { initialSku?: string }) {
-  const [rows, setRows] = useState<StoneInfo[]>([]);
+  const [rows, setRows] = useState<Row[]>([]);
   const [scanValue, setScanValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -41,6 +60,7 @@ export function ReturnForm({ initialSku }: { initialSku?: string }) {
     if (!sku) return;
     setScanValue("");
     setError(null);
+    setMessage(null);
     if (rows.some((r) => r.sku === sku)) return;
 
     const res = await fetch(`/api/stones/${encodeURIComponent(sku)}`);
@@ -49,12 +69,28 @@ export function ReturnForm({ initialSku }: { initialSku?: string }) {
       return;
     }
     const info = await res.json();
-    const startingWeight = info.caratWeight !== null && info.caratWeight !== undefined ? Number(info.caratWeight) : null;
-    const weight = startingWeight !== null ? String(startingWeight) : "";
+    const issueWeight = info.issueWeight !== null && info.issueWeight !== undefined ? Number(info.issueWeight) : null;
     setRows((prev) => [
       ...prev,
-      { sku, weight, process: info.process, party: info.party, startingWeight, topsEntries: [] },
+      {
+        sku,
+        stage: info.stage,
+        party: info.party,
+        isSawing: Boolean(info.isSawing),
+        issueWeight,
+        issuePieces: info.issuePieces ?? 1,
+        lossLimitPct: info.lossLimitPct ?? null,
+        // Prefilled with the stone's recorded weight (as before); the
+        // weigher corrects it, and the loss line updates as they type.
+        weight: info.caratWeight !== null && info.caratWeight !== undefined ? String(info.caratWeight) : "",
+        pieces: String(info.issuePieces ?? 1),
+        condition: "OK",
+        remark: "",
+        excessReason: "",
+        topsEntries: [],
+      },
     ]);
+    scanRef.current?.focus();
   }
 
   // Opened from a stone's page ("Return" quick action): start with that stone.
@@ -68,63 +104,52 @@ export function ReturnForm({ initialSku }: { initialSku?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSku]);
 
-  function removeRow(sku: string) {
-    setRows((prev) => prev.filter((r) => r.sku !== sku));
-  }
-
-  function updateWeight(sku: string, weight: string) {
-    setRows((prev) => prev.map((r) => (r.sku === sku ? { ...r, weight } : r)));
-  }
-
-  function addTopsEntry(sku: string) {
+  function updateRow(sku: string, patch: Partial<Row>, fromTops = false) {
     setRows((prev) =>
-      prev.map((r) => (r.sku === sku ? recomputeWeightFromTops({ ...r, topsEntries: [...r.topsEntries, ""] }) : r)),
-    );
-  }
-
-  function updateTopsEntry(sku: string, index: number, value: string) {
-    setRows((prev) =>
-      prev.map((r) =>
-        r.sku === sku
-          ? recomputeWeightFromTops({
-              ...r,
-              topsEntries: r.topsEntries.map((v, i) => (i === index ? value : v)),
-            })
-          : r,
-      ),
-    );
-  }
-
-  function removeTopsEntry(sku: string, index: number) {
-    setRows((prev) =>
-      prev.map((r) =>
-        r.sku === sku
-          ? recomputeWeightFromTops({ ...r, topsEntries: r.topsEntries.filter((_, i) => i !== index) })
-          : r,
-      ),
+      prev.map((r) => {
+        if (r.sku !== sku) return r;
+        const next = { ...r, ...patch };
+        return fromTops ? recomputeWeightFromTops(next) : next;
+      }),
     );
   }
 
   function submit(formData: FormData) {
     setError(null);
     setMessage(null);
-    const date = String(formData.get("date") ?? today);
-    const notes = String(formData.get("notes") ?? "");
+    const missingWeight = rows.find((r) => r.weight === "");
+    if (missingWeight) {
+      setError(`Enter the return weight for "${missingWeight.sku}".`);
+      return;
+    }
+    const missingReason = rows.find((r) => lossOf(r)?.excess && !r.excessReason.trim());
+    if (missingReason) {
+      setError(`"${missingReason.sku}" is over the allowed loss — give a reason before saving.`);
+      return;
+    }
+
     startTransition(async () => {
       const result = await returnStones({
-        date,
-        notes,
+        date: String(formData.get("date") ?? today),
+        notes: String(formData.get("notes") ?? ""),
         stones: rows.map((r) => ({
           sku: r.sku,
           weight: r.weight,
-          topsWeight: r.topsEntries.length > 0 ? String(sumTops(r.topsEntries)) : undefined,
+          pieces: r.pieces,
+          condition: r.condition,
+          remark: r.remark,
+          topsWeight: r.topsEntries.length > 0 ? sumTops(r.topsEntries).toFixed(3) : "",
+          excessReason: lossOf(r)?.excess ? r.excessReason : "",
         })),
       });
       if (result.error) {
         setError(result.error);
         return;
       }
-      setMessage(`Returned ${result.returned} stone${result.returned === 1 ? "" : "s"}.`);
+      setMessage(
+        `Returned ${result.returned} stone${result.returned === 1 ? "" : "s"}.` +
+          (result.excess ? ` ${result.excess} flagged for excess loss.` : ""),
+      );
       setRows([]);
     });
   }
@@ -136,25 +161,13 @@ export function ReturnForm({ initialSku }: { initialSku?: string }) {
           <label htmlFor="date" className="block text-sm font-medium text-zinc-700">
             Date
           </label>
-          <input
-            id="date"
-            name="date"
-            type="date"
-            defaultValue={today}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-          />
+          <input id="date" name="date" type="date" defaultValue={today} className={inputClass} />
         </div>
         <div>
           <label htmlFor="notes" className="block text-sm font-medium text-zinc-700">
             Notes
           </label>
-          <input
-            id="notes"
-            name="notes"
-            type="text"
-            placeholder="Optional"
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-          />
+          <input id="notes" name="notes" type="text" placeholder="Optional" className={inputClass} />
         </div>
       </div>
 
@@ -173,124 +186,171 @@ export function ReturnForm({ initialSku }: { initialSku?: string }) {
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              addScan();
+              void addScan();
             }
           }}
-          placeholder="Click here, then scan each returning stone's barcode"
-          className="mt-1 w-full rounded-md border border-zinc-300 px-4 py-3 text-lg focus:border-zinc-500 focus:outline-none"
+          placeholder="Tap here, then scan each returning stone"
+          className="mt-1 min-h-12 w-full rounded-md border border-zinc-300 px-4 py-3 text-lg focus:border-zinc-500 focus:outline-none"
         />
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
-            <tr>
-              <th className="px-4 py-2 font-medium">#</th>
-              <th className="px-4 py-2 font-medium">Stone number</th>
-              <th className="px-4 py-2 font-medium">Currently at</th>
-              <th className="px-4 py-2 font-medium">Return weight (ct)</th>
-              <th className="px-4 py-2 font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
-                  No stones scanned yet.
-                </td>
-              </tr>
-            )}
-            {rows.map((r, i) => {
-              const isSawing = r.process ? (SAWING_PROCESS_VALUES as readonly string[]).includes(r.process) : false;
-              return (
-                <Fragment key={r.sku}>
-                  <tr className={isSawing ? "border-b-0" : "border-b border-zinc-100 last:border-0"}>
-                    <td className="px-4 py-2 text-zinc-500">{i + 1}</td>
-                    <td className="px-4 py-2 font-mono text-xs text-zinc-800">{r.sku}</td>
-                    <td className="px-4 py-2 text-zinc-500">
-                      {r.process ? PROCESS_LABELS[r.process] ?? r.process : "—"}
-                      {r.party ? ` · ${r.party}` : ""}
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.001"
-                        value={r.weight}
-                        onChange={(e) => updateWeight(r.sku, e.target.value)}
-                        className="w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="px-4 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => removeRow(r.sku)}
-                        className="text-zinc-400 hover:text-red-600 hover:underline"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                  {isSawing && (
-                    <tr className="border-b border-zinc-100 last:border-0 bg-blue-50">
-                      <td></td>
-                      <td colSpan={4} className="px-4 pb-3">
-                        <p className="text-xs font-medium text-blue-700">
-                          Tops removed (cut pieces) — starting weight {r.startingWeight ?? "—"} ct
-                        </p>
-                        <div className="mt-1 flex flex-col gap-1.5">
-                          {r.topsEntries.map((v, idx) => (
-                            <div key={idx} className="flex items-center gap-2">
-                              <span className="w-14 text-xs text-blue-700">Cut {idx + 1}</span>
-                              <input
-                                type="number"
-                                min={0}
-                                step="0.001"
-                                value={v}
-                                onChange={(e) => updateTopsEntry(r.sku, idx, e.target.value)}
-                                placeholder="ct"
-                                className="w-24 rounded-md border border-blue-300 px-2 py-1 text-sm"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => removeTopsEntry(r.sku, idx)}
-                                className="text-xs text-blue-400 hover:text-red-600 hover:underline"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => addTopsEntry(r.sku)}
-                            className="mt-1 w-fit rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100"
-                          >
-                            + Add tops weight
-                          </button>
-                          {r.topsEntries.length > 0 && (
-                            <p className="mt-1 text-xs text-blue-700">
-                              {r.startingWeight ?? 0} ct − {sumTops(r.topsEntries).toFixed(3)} ct tops ={" "}
-                              <span className="font-medium">{r.weight} ct final</span>
-                            </p>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+      <div className="flex flex-col gap-3">
+        {rows.length === 0 && (
+          <p className="rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
+            No stones scanned yet.
+          </p>
+        )}
+        {rows.map((r, i) => {
+          const loss = lossOf(r);
+          return (
+            <div
+              key={r.sku}
+              className={`rounded-lg border bg-white p-3 ${loss?.excess ? "border-red-400 ring-1 ring-red-200" : "border-zinc-200"}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-mono text-sm text-zinc-900">
+                    <span className="text-zinc-400">{i + 1}.</span> {r.sku}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {r.stage ?? "—"}
+                    {r.party ? ` · ${r.party}` : ""} · issued {r.issueWeight ?? "—"} ct
+                    {r.issuePieces > 1 ? ` · ${r.issuePieces} pc` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRows((prev) => prev.filter((x) => x.sku !== r.sku))}
+                  className="min-h-10 px-2 text-sm text-zinc-400 hover:text-red-600"
+                >
+                  Remove
+                </button>
+              </div>
+
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <label className="text-xs text-zinc-500">
+                  Return wt (ct)
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.001"
+                    required
+                    value={r.weight}
+                    onChange={(e) => updateRow(r.sku, { weight: e.target.value })}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="text-xs text-zinc-500">
+                  Pieces
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step="1"
+                    value={r.pieces}
+                    onChange={(e) => updateRow(r.sku, { pieces: e.target.value })}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="text-xs text-zinc-500">
+                  Condition
+                  <select
+                    value={r.condition}
+                    onChange={(e) => updateRow(r.sku, { condition: e.target.value })}
+                    className={inputClass}
+                  >
+                    {RETURN_CONDITIONS.map((c) => (
+                      <option key={c} value={c}>
+                        {RETURN_CONDITION_LABELS[c]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {r.isSawing && (
+                <div className="mt-2 rounded-md bg-blue-50 p-2">
+                  <p className="text-xs font-medium text-blue-700">Tops removed (cut pieces, recovered)</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {r.topsEntries.map((v, idx) => (
+                      <div key={idx} className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="0.001"
+                          value={v}
+                          onChange={(e) =>
+                            updateRow(r.sku, { topsEntries: r.topsEntries.map((x, j) => (j === idx ? e.target.value : x)) }, true)
+                          }
+                          placeholder={`Cut ${idx + 1} ct`}
+                          className="min-h-10 w-24 rounded-md border border-blue-300 px-2 text-base sm:text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateRow(r.sku, { topsEntries: r.topsEntries.filter((_, j) => j !== idx) }, true)}
+                          className="px-1 text-xs text-blue-400 hover:text-red-600"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => updateRow(r.sku, { topsEntries: [...r.topsEntries, ""] }, true)}
+                      className="min-h-10 rounded-md border border-blue-300 px-3 text-xs text-blue-700 hover:bg-blue-100"
+                    >
+                      + Tops
+                    </button>
+                  </div>
+                  {r.topsEntries.length > 0 && (
+                    <p className="mt-1 text-xs text-blue-700">{sumTops(r.topsEntries).toFixed(3)} ct of tops</p>
                   )}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+                </div>
+              )}
+
+              {loss && (
+                <p className={`mt-2 text-sm ${loss.excess ? "font-medium text-red-700" : "text-zinc-600"}`}>
+                  Loss {loss.lossWeight} ct
+                  {loss.lossPct !== null && ` · ${Number(loss.lossPct).toFixed(2)}%`}
+                  {r.lossLimitPct !== null
+                    ? ` (allowed ${Number(r.lossLimitPct).toFixed(2)}%)`
+                    : " (no limit set)"}
+                  {Number(loss.lossWeight) < 0 && " — return weight is more than issued!"}
+                </p>
+              )}
+              {loss?.excess && (
+                <label className="mt-2 block text-xs font-medium text-red-700">
+                  Over the allowed loss — reason (required)
+                  <input
+                    type="text"
+                    value={r.excessReason}
+                    onChange={(e) => updateRow(r.sku, { excessReason: e.target.value })}
+                    placeholder="e.g. hidden inclusion opened during sawing"
+                    className="mt-1 w-full rounded-md border border-red-300 px-3 py-2 text-base sm:text-sm"
+                  />
+                </label>
+              )}
+              <input
+                type="text"
+                value={r.remark}
+                onChange={(e) => updateRow(r.sku, { remark: e.target.value })}
+                placeholder="Remark (optional)"
+                className="mt-2 min-h-10 w-full rounded-md border border-zinc-200 px-3 text-base sm:text-sm"
+              />
+            </div>
+          );
+        })}
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {message && <p className="text-sm text-emerald-600">{message}</p>}
+      {message && <p className="text-sm text-emerald-700">{message}</p>}
 
       <button
         type="submit"
         disabled={isPending || rows.length === 0}
-        className="w-full rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-60"
+        className="min-h-12 w-full rounded-md bg-[var(--accent)] px-4 py-3 text-base font-medium text-white hover:brightness-110 disabled:opacity-60"
       >
         {isPending ? "Returning..." : `Return ${rows.length || ""} stone${rows.length === 1 ? "" : "s"}`}
       </button>

@@ -88,9 +88,26 @@ async function main() {
     }
   }
 
+  // Phase 2: example loss limits (only where none is set yet).
+  for (const [code, pct] of [
+    ["GREEN_SAWING", "8"],
+    ["QUAZER_SAWING", "8"],
+    ["BRUTING", "10"],
+    ["POLISHING", "45"],
+  ] as const) {
+    await prisma.processStage.updateMany({ where: { code, defaultLossLimitPct: null }, data: { defaultLossLimitPct: pct } });
+  }
+  const bruteStage = await prisma.processStage.findUnique({ where: { code: "BRUTING" } });
+  if (bruteStage && !(await prisma.lossLimit.findFirst({ where: { stageId: bruteStage.id, partyId: bruter.id } }))) {
+    await prisma.lossLimit.create({
+      data: { stageId: bruteStage.id, partyId: bruter.id, allowedPct: "12", effectiveFrom: new Date("2026-01-01") },
+    });
+  }
+
   const lotNumber = "DEMO-LOT-001";
   if (await prisma.lot.findUnique({ where: { lotNumber } })) {
-    console.log("Demo lot already exists — users and parties ensured, nothing else to do.");
+    await backfillDemoMovements();
+    console.log("Demo lot already exists — users, parties, and limits ensured.");
     return;
   }
 
@@ -204,8 +221,28 @@ async function main() {
     data: { stoneId: stones[0].id, type: "TRANSFER_TO_POLISH", at: new Date("2026-10-01T12:00:00+05:30"), userId: adminId, weightBefore: "2.410", weightAfter: "1.520", refType: "PolishedStone", refId: polished.id, summary: `Transferred to Polish as ${polished.stockId}` },
   });
 
+  await backfillDemoMovements();
   console.log(`Demo data created: lot ${lotNumber} with ${stones.length} stones, parties, rates.`);
   console.log(`Demo logins (password "${DEMO_PASSWORD}"): ${DEMO_USERS.map((u) => u.username).join(", ")}`);
+}
+
+// Movements above are written the pre-ERP way (process only); give them
+// their stage and loss the same way the Phase 2 backfill migration does.
+async function backfillDemoMovements() {
+  await prisma.$executeRaw`
+    UPDATE "ProcessMovement" m SET "stageId" = s."id"
+    FROM "ProcessStage" s
+    WHERE m."stageId" IS NULL AND m."process" IS NOT NULL AND s."legacyProcess" = m."process"`;
+  await prisma.$executeRaw`
+    UPDATE "Memo" mo SET "stageId" = s."id"
+    FROM "ProcessStage" s
+    WHERE mo."stageId" IS NULL AND mo."process" IS NOT NULL AND s."legacyProcess" = mo."process"`;
+  await prisma.$executeRaw`
+    UPDATE "ProcessMovement" SET
+      "lossWeight" = ROUND(("issueWeight" - "returnWeight" - COALESCE("topsWeight", 0))::numeric, 3),
+      "lossPct" = CASE WHEN "issueWeight" > 0
+        THEN ROUND((("issueWeight" - "returnWeight" - COALESCE("topsWeight", 0)) / "issueWeight" * 100)::numeric, 3) END
+    WHERE "lossWeight" IS NULL AND "returnDate" IS NOT NULL AND "issueWeight" IS NOT NULL AND "returnWeight" IS NOT NULL`;
 }
 
 main()

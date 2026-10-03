@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/settings/parties", title: "Parties", description: "Vendors, karigars, job-workers, customers, brokers." },
   { href: "/settings/stages", title: "Process stages", description: "The manufacturing steps, their order and department." },
   { href: "/settings/departments", title: "Departments", description: "Factory departments that operators are assigned to." },
+  { href: "/settings/loss-limits", title: "Loss limits", description: "Allowed loss % per stage, and per karigar." },
   { href: "/users", title: "Users", description: "Logins, roles, cost visibility, departments." },
   { href: "/admin/audit", title: "Audit log", description: "Every change: who, when, old → new." },
 ];

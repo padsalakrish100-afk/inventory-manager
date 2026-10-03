@@ -25,10 +25,14 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
             lot: {
               include: {
                 sourceParty: true,
-                products: { include: { movements: { orderBy: { issueDate: "asc" }, take: 1 } } },
+                products: { include: { movements: { where: { voidedAt: null }, orderBy: { issueDate: "asc" }, take: 1 } } },
               },
             },
-            movements: { include: { party: true }, orderBy: { issueDate: "asc" } },
+            movements: {
+              where: { voidedAt: null },
+              include: { party: true, stage: { select: { name: true } } },
+              orderBy: { issueDate: "asc" },
+            },
           },
         },
       },
@@ -187,7 +191,7 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
                 <tbody>
                   {source.movements.map((m) => (
                     <tr key={m.id} className="border-b border-zinc-100 last:border-0">
-                      <td className="py-2 text-zinc-800">{m.process}</td>
+                      <td className="py-2 text-zinc-800">{m.stage?.name ?? m.process ?? "—"}</td>
                       <td className="py-2 text-zinc-500">{m.party?.name ?? "—"}</td>
                       <td className="py-2 text-zinc-500">{formatDate(m.issueDate)}</td>
                       <td className="py-2 text-zinc-500">

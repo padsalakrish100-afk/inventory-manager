@@ -7,6 +7,7 @@ import { WeightCell } from "./weight-cell";
 import { PurchaseCostEditor } from "./purchase-cost-editor";
 import { can, requirePagePermission } from "@/lib/authz";
 import { formatDate } from "@/lib/dates";
+import { STONE_STATUS_LABELS, STONE_STATUS_STYLES } from "@/lib/stone/status";
 
 export default async function LotDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const viewer = await requirePagePermission("lots.manage");
@@ -18,13 +19,20 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
       sourceParty: true,
       products: {
         orderBy: { sku: "asc" },
-        include: { currentParty: true, polishedStone: true },
+        include: {
+          currentParty: true,
+          polishedStone: true,
+          currentStage: { select: { name: true } },
+          currentDepartment: { select: { name: true } },
+        },
       },
     },
   });
   if (!lot) notFound();
 
-  const availableCount = lot.products.filter((p) => !p.currentProcess && !p.polishedStone).length;
+  const availableCount = lot.products.filter(
+    (p) => !p.currentStageId && !p.currentProcess && !p.polishedStone && p.status === "IN_PRODUCTION",
+  ).length;
   const polishedCount = lot.products.filter((p) => p.polishedStone).length;
 
   const weighedStones = lot.products.filter((p) => p.caratWeight !== null);
@@ -115,10 +123,16 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
                     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                       Polish ({p.polishedStone.stockId})
                     </span>
-                  ) : p.currentProcess ? (
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PROCESS_STYLES[p.currentProcess]}`}>
-                      {PROCESS_LABELS[p.currentProcess]}
-                      {p.currentParty ? ` · ${p.currentParty.name}` : ""}
+                  ) : p.currentStageId || p.currentProcess ? (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${p.currentProcess ? PROCESS_STYLES[p.currentProcess] : "bg-amber-50 text-amber-700"}`}
+                    >
+                      {p.currentStage?.name ?? (p.currentProcess ? PROCESS_LABELS[p.currentProcess] : "Out")}
+                      {p.currentParty ? ` · ${p.currentParty.name}` : p.currentDepartment ? ` · ${p.currentDepartment.name}` : ""}
+                    </span>
+                  ) : p.status !== "IN_PRODUCTION" ? (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STONE_STATUS_STYLES[p.status]}`}>
+                      {STONE_STATUS_LABELS[p.status]}
                     </span>
                   ) : (
                     <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">

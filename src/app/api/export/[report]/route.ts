@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { buildExcelBuffer, excelResponse, type ExportColumn } from "@/lib/export/excel";
 import { buildPdfBuffer, pdfResponse, type PdfColumn } from "@/lib/export/pdf";
 import { POLISH_STATUS_LABELS, SALE_TYPE_LABELS, PAYMENT_STATUS_LABELS, daysInStock, computeTotalCost } from "@/lib/polish-status";
-import { PROCESS_LABELS, PROCESS_OPTIONS } from "@/lib/process";
+import { PROCESS_LABELS } from "@/lib/process";
 import { formatMoney } from "@/lib/format";
 import type { PolishStatus } from "@/generated/prisma/client";
 
@@ -180,12 +180,20 @@ async function buildReport(
     case "manufacturing-reports": {
       const reworkedOnly = searchParams.get("reworkedOnly") === "1";
       const stones = await prisma.product.findMany({
-        include: { lot: true, polishedStone: true, movements: true },
+        include: {
+          lot: true,
+          polishedStone: true,
+          currentStage: { select: { name: true } },
+          movements: { where: { voidedAt: null }, select: { stage: { select: { name: true } }, process: true } },
+        },
         orderBy: { sku: "asc" },
       });
       const stoneRows = stones.map((s) => {
         const counts = new Map<string, number>();
-        for (const m of s.movements) counts.set(m.process, (counts.get(m.process) ?? 0) + 1);
+        for (const m of s.movements) {
+          const key = m.stage?.name ?? (m.process ? (PROCESS_LABELS[m.process] ?? m.process) : "Unknown");
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
         const reworked = [...counts.values()].some((c) => c > 1);
         return { stone: s, counts, reworked };
       });
@@ -205,15 +213,12 @@ async function buildReport(
           lot: stone.lot?.lotNumber ?? "",
           status: stone.polishedStone
             ? "Polished"
-            : stone.currentProcess
-              ? (PROCESS_LABELS[stone.currentProcess] ?? stone.currentProcess)
-              : "Available",
-          processed:
-            counts.size === 0
-              ? ""
-              : PROCESS_OPTIONS.filter((p) => counts.has(p.value))
-                  .map((p) => `${p.label} x${counts.get(p.value)}`)
-                  .join(", "),
+            : stone.currentStage
+              ? stone.currentStage.name
+              : stone.currentProcess
+                ? (PROCESS_LABELS[stone.currentProcess] ?? stone.currentProcess)
+                : "Available",
+          processed: [...counts.entries()].map(([name, n]) => `${name} x${n}`).join(", "),
         })),
       };
     }

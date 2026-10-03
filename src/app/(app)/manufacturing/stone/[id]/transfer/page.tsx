@@ -9,7 +9,7 @@ export default async function TransferPage({ params }: { params: Promise<{ id: s
   const stone = await prisma.product.findUnique({ where: { id }, include: { polishedStone: true } });
   if (!stone) notFound();
   if (stone.polishedStone) redirect(`/polish/${stone.polishedStone.id}`);
-  if (stone.currentProcess) redirect(`/stones/${stone.id}`);
+  if (stone.currentProcess || stone.currentStageId || stone.status !== "IN_PRODUCTION") redirect(`/stones/${stone.id}`);
 
   return (
     <div className="flex flex-col gap-6">

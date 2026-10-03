@@ -18,7 +18,8 @@ export default async function StagesPage() {
         <h1 className="text-2xl font-semibold text-zinc-900">Process stages</h1>
         <p className="mt-1 text-sm text-zinc-500">
           The manufacturing steps, in order. Stages can be renamed or deactivated but never deleted, so old records
-          keep their meaning. The allowed loss % is used from Phase 2 (excess-loss alerts).
+          keep their meaning. A return losing more than the allowed % is flagged as excess loss (karigar-specific
+          limits are on the Loss limits page).
         </p>
         <Link href="/settings" className="mt-1 inline-block text-sm text-zinc-500 hover:underline">
           &larr; Settings

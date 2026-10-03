@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { undoMovement } from "../../manufacturing/actions";
+import { voidMovement } from "../../manufacturing/actions";
 
-export function UndoMovementButton({ movementId, productId }: { movementId: string; productId: string }) {
+// Undo = void: the entry stays in history (struck through, with the reason)
+// and the stone goes back to where it was before that issue.
+export function UndoMovementButton({ movementId }: { movementId: string }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -13,17 +15,15 @@ export function UndoMovementButton({ movementId, productId }: { movementId: stri
         type="button"
         disabled={isPending}
         onClick={() => {
-          if (!confirm("Undo this entry? This removes it completely, not just marks it returned.")) return;
+          const reason = prompt("Why undo this entry? (kept in the history)");
+          if (reason === null) return;
           setError(null);
           startTransition(async () => {
-            try {
-              await undoMovement(movementId, productId);
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Failed to undo.");
-            }
+            const result = await voidMovement(movementId, reason);
+            if (result.error) setError(result.error);
           });
         }}
-        className="text-zinc-400 hover:text-red-600 hover:underline disabled:opacity-50"
+        className="min-h-10 px-2 text-zinc-400 hover:text-red-600 hover:underline disabled:opacity-50"
       >
         {isPending ? "Undoing..." : "Undo"}
       </button>

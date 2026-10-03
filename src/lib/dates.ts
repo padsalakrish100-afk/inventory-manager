@@ -51,6 +51,11 @@ export function dateInputToStartOfDayIST(value: string | null | undefined): Date
   return Number.isNaN(d.getTime()) ? new Date(value) : d;
 }
 
+// The moment `days` days ago — e.g. "issued before this is overdue".
+export function daysAgo(days: number): Date {
+  return new Date(Date.now() - days * 86_400_000);
+}
+
 export function daysSince(value: Date, now: Date = new Date()): number {
   return Math.max(0, Math.floor((now.getTime() - value.getTime()) / 86_400_000));
 }

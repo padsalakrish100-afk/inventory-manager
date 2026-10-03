@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
-import { PROCESS_LABELS, PROCESS_STYLES, PROCESS_OPTIONS } from "@/lib/process";
+import { getStages } from "@/lib/process-stages";
 import { ExportButtons } from "@/components/export-buttons";
 
 export default async function ManufacturingReportsPage({
@@ -11,7 +11,7 @@ export default async function ManufacturingReportsPage({
 }) {
   await requirePagePermission("mfg.reports");
   const { reworkedOnly, sort } = await searchParams;
-  const [lots, stones] = await Promise.all([
+  const [lots, stones, stages] = await Promise.all([
     prisma.lot.findMany({
       include: {
         sourceParty: true,
@@ -23,16 +23,22 @@ export default async function ManufacturingReportsPage({
       include: {
         lot: true,
         currentParty: true,
+        currentStage: { select: { name: true } },
         polishedStone: true,
-        movements: true,
+        movements: { where: { voidedAt: null }, select: { stageId: true } },
       },
       orderBy: { sku: "asc" },
     }),
+    getStages(),
   ]);
+  const stageName = (id: string) => stages.find((st) => st.id === id)?.name ?? "Unknown stage";
 
   const stoneRows = stones.map((s) => {
     const counts = new Map<string, number>();
-    for (const m of s.movements) counts.set(m.process, (counts.get(m.process) ?? 0) + 1);
+    for (const m of s.movements) {
+      const key = m.stageId ?? "none";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
     const totalMoves = s.movements.length;
     const reworked = [...counts.values()].some((c) => c > 1);
     return { stone: s, counts, totalMoves, reworked };
@@ -40,15 +46,15 @@ export default async function ManufacturingReportsPage({
 
   const reworkedCount = stoneRows.filter((r) => r.reworked).length;
 
-  // Total "extra" (repeat) instances per process across every stone — e.g.
+  // Total "extra" (repeat) instances per stage across every stone — e.g.
   // a stone sent through Chabka 3 times contributes 2 repeats to Chabka.
   const repeatsByProcess = new Map<string, { repeats: number; stonesAffected: number }>();
-  for (const p of PROCESS_OPTIONS) repeatsByProcess.set(p.value, { repeats: 0, stonesAffected: 0 });
+  for (const st of stages.filter((x) => x.active)) repeatsByProcess.set(st.id, { repeats: 0, stonesAffected: 0 });
   for (const { counts } of stoneRows) {
     for (const [process, count] of counts.entries()) {
       if (count <= 1) continue;
-      const entry = repeatsByProcess.get(process);
-      if (!entry) continue;
+      const entry = repeatsByProcess.get(process) ?? { repeats: 0, stonesAffected: 0 };
+      repeatsByProcess.set(process, entry);
       entry.repeats += count - 1;
       entry.stonesAffected += 1;
     }
@@ -103,7 +109,7 @@ export default async function ManufacturingReportsPage({
               )}
               {lots.map((lot) => {
                 const polished = lot.products.filter((p) => p.polishedStone).length;
-                const issued = lot.products.filter((p) => p.currentProcess && !p.polishedStone).length;
+                const issued = lot.products.filter((p) => (p.currentStageId || p.currentProcess) && !p.polishedStone).length;
                 const available = lot.products.length - polished - issued;
                 return (
                   <tr key={lot.id} className="border-b border-zinc-100 last:border-0">
@@ -181,15 +187,15 @@ export default async function ManufacturingReportsPage({
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold text-zinc-900">Repeat count by process</h2>
+        <h2 className="text-lg font-semibold text-zinc-900">Repeat count by stage</h2>
         <p className="text-sm text-zinc-500">
-          Total repeat instances per process across every stone — which process causes the most rework.
+          Total repeat instances per stage across every stone — which stage causes the most rework.
         </p>
         <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
               <tr>
-                <th className="px-4 py-3 font-medium">Process</th>
+                <th className="px-4 py-3 font-medium">Stage</th>
                 <th className="px-4 py-3 font-medium">Stones affected</th>
                 <th className="px-4 py-3 font-medium">
                   <Link href={`/manufacturing/reports?${repeatSortParams}`} className="flex items-center gap-1 hover:text-zinc-900">
@@ -203,8 +209,8 @@ export default async function ManufacturingReportsPage({
               {repeatRows.map(([process, { repeats, stonesAffected }]) => (
                 <tr key={process} className="border-b border-zinc-100 last:border-0">
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PROCESS_STYLES[process]}`}>
-                      {PROCESS_LABELS[process]}
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">
+                      {stageName(process)}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-zinc-500">{stonesAffected}</td>
@@ -266,9 +272,9 @@ export default async function ManufacturingReportsPage({
                       <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                         Polished
                       </span>
-                    ) : stone.currentProcess ? (
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PROCESS_STYLES[stone.currentProcess]}`}>
-                        {PROCESS_LABELS[stone.currentProcess]}
+                    ) : stone.currentStageId || stone.currentProcess ? (
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        {stone.currentStage?.name ?? stone.currentProcess}
                       </span>
                     ) : (
                       <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
@@ -281,7 +287,7 @@ export default async function ManufacturingReportsPage({
                       "—"
                     ) : (
                       <span className={reworked ? "font-medium text-orange-600" : ""}>
-                        {[...counts.entries()].map(([p, c]) => `${PROCESS_LABELS[p]} ×${c}`).join(", ")}
+                        {[...counts.entries()].map(([p, c]) => `${stageName(p)} ×${c}`).join(", ")}
                       </span>
                     )}
                   </td>

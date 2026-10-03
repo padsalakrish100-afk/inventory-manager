@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/authz";
 import { writeAudit } from "@/lib/audit";
 import { formToObject, parseInput, zRequiredText } from "@/lib/validation";
+import { dateInputToStartOfDayIST } from "@/lib/dates";
 
 const pct = z.union([
   z.literal("").transform(() => null),
@@ -140,6 +141,63 @@ export async function updateDepartment(
   revalidatePath("/settings/departments");
   revalidatePath("/settings/stages");
   return "Saved.";
+}
+
+const lossLimitSchema = z.object({
+  stageId: z.string().trim().min(1, "Choose a stage.").max(64),
+  party: z.string().trim().min(1, "Choose the karigar.").max(200),
+  allowedPct: z
+    .string()
+    .trim()
+    .regex(/^\d{1,2}(\.\d{1,3})?$|^100(\.0{1,3})?$/, "Allowed loss must be a percentage between 0 and 100."),
+  effectiveFrom: z.string().trim(),
+});
+
+// A karigar-specific allowed loss for one stage, effective from a date.
+// Adding a new one for the same karigar+stage supersedes the old (history
+// kept, so past returns keep the limit they were checked against).
+export async function addLossLimit(_prev: string | undefined, formData: FormData): Promise<string | undefined> {
+  const viewer = await requirePermission("admin");
+  const raw = formToObject(formData);
+  const str = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
+  const parsed = parseInput(lossLimitSchema, {
+    stageId: str("stageId"),
+    party: str("party"),
+    allowedPct: str("allowedPct"),
+    effectiveFrom: str("effectiveFrom"),
+  });
+  if (!parsed.ok) return parsed.error;
+
+  const [stage, party] = await Promise.all([
+    prisma.processStage.findUnique({ where: { id: parsed.data.stageId } }),
+    prisma.party.findUnique({ where: { name: parsed.data.party } }),
+  ]);
+  if (!stage) return "Stage not found.";
+  if (!party) return "No party with that name — add the karigar on the Parties page first.";
+
+  await prisma.$transaction(async (tx) => {
+    const limit = await tx.lossLimit.create({
+      data: {
+        stageId: stage.id,
+        partyId: party.id,
+        allowedPct: parsed.data.allowedPct,
+        effectiveFrom: dateInputToStartOfDayIST(parsed.data.effectiveFrom),
+      },
+    });
+    await writeAudit(tx, viewer.id, { action: "CREATE", entity: "LossLimit", entityId: limit.id, after: limit });
+  });
+  revalidatePath("/settings/loss-limits");
+}
+
+export async function deleteLossLimit(limitId: string) {
+  const viewer = await requirePermission("admin");
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.lossLimit.findUnique({ where: { id: limitId } });
+    if (!before) throw new Error("Limit not found.");
+    await tx.lossLimit.delete({ where: { id: limitId } });
+    await writeAudit(tx, viewer.id, { action: "DELETE", entity: "LossLimit", entityId: limitId, before });
+  });
+  revalidatePath("/settings/loss-limits");
 }
 
 const generalSchema = z.object({
