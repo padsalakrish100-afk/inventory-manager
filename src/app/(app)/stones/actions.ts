@@ -12,6 +12,7 @@ import { dateInputToInstant } from "@/lib/dates";
 import { getStages } from "@/lib/process-stages";
 import { ensurePartyWithRole } from "@/lib/party";
 import { saveAttachment, validateUpload } from "@/lib/storage";
+import { propagateSplitCosts } from "@/lib/costing/allocate";
 import { parseInput, zCarat, zDateString, zId, zOptionalText } from "@/lib/validation";
 
 const moveSchema = z.object({
@@ -305,6 +306,8 @@ export async function splitStone(input: {
       });
       const { polishedStone: _ps, ...parentBefore } = parent;
       const parentAfter = await tx.product.update({ where: { id: parent.id }, data: { status: "SPLIT" } });
+      // The parent's whole cost so far (rough, labour, …) moves to the children by weight.
+      await propagateSplitCosts(tx, viewer.id, parent.id);
 
       await writeAudit(tx, viewer.id, [
         { action: "CREATE", entity: "StoneSplit", entityId: split.id, after: { ...split, children: skus } },

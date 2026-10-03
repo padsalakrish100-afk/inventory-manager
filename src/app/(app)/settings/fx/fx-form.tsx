@@ -1,7 +1,8 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import { useFormAction } from "@/lib/use-form-action";
-import { setExchangeRate } from "../actions";
+import { fillMissingExchangeRates, setExchangeRate } from "../actions";
 import { todayIST } from "@/lib/dates";
 
 export function FxForm() {
@@ -31,5 +32,32 @@ export function FxForm() {
       </button>
       {error && <p className="w-full text-sm text-red-600">{error}</p>}
     </form>
+  );
+}
+
+export function FillMissingButton() {
+  const [isPending, startTransition] = useTransition();
+  const [info, setInfo] = useState<string | null>(null);
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-zinc-200 bg-white p-4">
+      <p className="text-sm text-zinc-600">
+        Older entries without a rate are left out of the other currency&apos;s totals. Fill them with the rate in force on
+        their own date (only where you&apos;ve entered one that early).
+      </p>
+      <button
+        type="button"
+        disabled={isPending}
+        onClick={() =>
+          startTransition(async () => {
+            const r = await fillMissingExchangeRates();
+            setInfo(r.info);
+          })
+        }
+        className="min-h-10 w-fit rounded-md border border-zinc-300 px-4 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+      >
+        {isPending ? "Filling..." : "Fill missing rates on older entries"}
+      </button>
+      {info && <p className="text-sm text-emerald-700">{info}</p>}
+    </div>
   );
 }

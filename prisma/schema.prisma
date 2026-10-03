@@ -30,6 +30,10 @@ model Setting {
   // Stones out with a karigar/department longer than this are highlighted
   // on the Pending report.
   pendingAlertDays Int @default(7)
+
+  // How a shared cost (rough purchase, job-work bill, overhead) is divided
+  // between stones: WEIGHT (by carats, default) or EQUAL (per stone).
+  costAllocationMethod String @default("WEIGHT")
 }
 
 model User {
@@ -134,6 +138,9 @@ model Product {
   events        StoneEvent[]
   breakages     Breakage[]
   splits        StoneSplit[]
+  plans         StonePlan[]
+  costEntries   CostEntry[]       @relation("CostStone")
+  costsSplitOut CostEntry[]       @relation("CostFromStone")
 
   @@index([lotId])
   @@index([currentPartyId])
@@ -429,6 +436,14 @@ model Lot {
   sourceParty   Party?  @relation("LotSource", fields: [sourcePartyId], references: [id])
   sourcePartyId String?
 
+  // ERP: the assortment packet this lot was made from (new purchases), or —
+  // for older lots — the currency/rate of `purchaseCost`, set before its
+  // rough cost is allocated to the stones.
+  packet           RoughPacket? @relation(fields: [packetId], references: [id])
+  packetId         String?      @unique
+  purchaseCurrency String?
+  purchaseFxRate   Decimal?     @db.Decimal(12, 4)
+
   products Product[]
   expenses LotExpense[]
 }
@@ -566,6 +581,7 @@ model Party {
   adjustments        KarigarAdjustment[]
   payrollRuns        PayrollRun[]
   jobWorkBills       JobWorkBill[]
+  roughPurchases     RoughPurchase[]
 
   transactions         Transaction[]
   lotExpenses          LotExpense[]
@@ -945,4 +961,135 @@ model ExchangeRate {
   usdInr      Decimal  @db.Decimal(12, 4)
   createdById String?
   createdAt   DateTime @default(now())
+}
+
+// ─── ERP rough purchase, planning, costing ──────────────────────────────────
+
+// A rough purchase from a vendor or tender. Invoice and Kimberley Process
+// certificate files are Attachments (ROUGH_INVOICE / ROUGH_KP).
+model RoughPurchase {
+  id            String        @id @default(cuid())
+  purchaseNo    String        @unique
+  party         Party         @relation(fields: [partyId], references: [id])
+  partyId       String
+  date          DateTime
+  source        String?
+  totalCarats   Decimal       @db.Decimal(12, 3)
+  pieces        Int
+  pricePerCarat Decimal       @db.Decimal(14, 2)
+  totalAmount   Decimal       @db.Decimal(14, 2)
+  currency      String
+  fxRate        Decimal?      @db.Decimal(12, 4)
+  invoiceNo     String?
+  kpCertNo      String?
+  dueDate       DateTime?
+  notes         String?
+  createdById   String
+  createdAt     DateTime      @default(now())
+  voidedAt      DateTime?
+  packets       RoughPacket[]
+
+  @@index([partyId, date])
+  @@index([date])
+}
+
+// One packet from assorting a purchase (by size, quality, model). Becomes a
+// Lot (and its stones) when it goes into production.
+model RoughPacket {
+  id         String        @id @default(cuid())
+  purchase   RoughPurchase @relation(fields: [purchaseId], references: [id])
+  purchaseId String
+  packetCode String        @unique
+  sizeRange  String?
+  quality    String?
+  model      String?
+  carats     Decimal       @db.Decimal(12, 3)
+  pieces     Int
+  // Share of the purchase cost (in the purchase currency), set when the
+  // purchase cost is allocated.
+  costShare  Decimal?      @db.Decimal(14, 2)
+  notes      String?
+  createdAt  DateTime      @default(now())
+  lot        Lot?
+
+  @@index([purchaseId])
+}
+
+// A planner's plan for one stone; Sarine/Galaxy files, images and PDFs are
+// Attachments (STONE_PLAN, entityId = plan id). One final plan per stone.
+model StonePlan {
+  id              String   @id @default(cuid())
+  stone           Product  @relation(fields: [stoneId], references: [id])
+  stoneId         String
+  version         Int
+  isFinal         Boolean  @default(true)
+  plannedShape    String
+  plannedCutStyle String?
+  plannedWeight   Decimal  @db.Decimal(12, 3)
+  expColor        String?
+  expClarity      String?
+  expCut          String?
+  expectedValue   Decimal? @db.Decimal(14, 2)
+  currency        String   @default("USD")
+  notes           String?
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  @@unique([stoneId, version])
+  @@index([stoneId, isFinal])
+}
+
+enum CostType {
+  ROUGH
+  LABOUR
+  JOB_WORK
+  CERTIFICATION
+  OTHER
+  OVERHEAD
+}
+
+// The cost ledger: every cost carried by a stone (karigar labour is read
+// straight from LabourEntry). Amounts are frozen in both USD and INR at the
+// entry's exchange rate; corrections void and re-create rows.
+model CostEntry {
+  id                   String    @id @default(cuid())
+  stone                Product   @relation("CostStone", fields: [stoneId], references: [id])
+  stoneId              String
+  type                 CostType
+  date                 DateTime
+  amount               Decimal   @db.Decimal(14, 2)
+  currency             String
+  fxRate               Decimal?  @db.Decimal(12, 4)
+  amountUsd            Decimal?  @db.Decimal(14, 2)
+  amountInr            Decimal?  @db.Decimal(14, 2)
+  // ROUGH_PURCHASE | LOT_ALLOCATION | JOB_WORK_BILL | OVERHEAD_POOL | SPLIT | MANUAL | LEGACY_POLISH
+  sourceType           String
+  sourceId             String?
+  allocatedFromStone   Product?  @relation("CostFromStone", fields: [allocatedFromStoneId], references: [id])
+  allocatedFromStoneId String?
+  note                 String?
+  createdById          String?
+  createdAt            DateTime  @default(now())
+  voidedAt             DateTime?
+
+  @@index([stoneId, voidedAt])
+  @@index([sourceType, sourceId])
+  @@index([type, date])
+}
+
+// A month's factory overhead, spread over the stones worked that month (by
+// carats issued on returns in the month).
+model OverheadPool {
+  id          String    @id @default(cuid())
+  month       DateTime  @db.Date
+  amount      Decimal   @db.Decimal(14, 2)
+  currency    String    @default("INR")
+  fxRate      Decimal?  @db.Decimal(12, 4)
+  note        String?
+  allocatedAt DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+  voidedAt    DateTime?
+
+  @@index([month])
 }

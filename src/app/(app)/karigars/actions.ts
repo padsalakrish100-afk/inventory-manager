@@ -10,6 +10,7 @@ import { TX_OPTIONS, writeAudit } from "@/lib/audit";
 import { categoryForRoles } from "@/lib/party";
 import { saveAttachment, validateUpload } from "@/lib/storage";
 import { usdInrOn } from "@/lib/fx";
+import { propagateSplitCosts } from "@/lib/costing/allocate";
 import { dateInputToInstant, dateInputToStartOfDayIST } from "@/lib/dates";
 import { periodBounds, unpaidPayroll, rupees } from "@/lib/karigar/payroll";
 import { formToObject, parseInput, zDateString, zId, zMoney, zOptionalText, zRequiredText } from "@/lib/validation";
@@ -257,6 +258,9 @@ export async function adjustLabourEntry(entryId: string, amount: string, note: s
         data: { amount: parsed.data.amount, source: "ADJUSTED", note: parsed.data.note },
       });
       await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "LabourEntry", entityId: entryId, before, after });
+      // If that stone was split since, its children carry this labour too.
+      const movement = await tx.processMovement.findUniqueOrThrow({ where: { id: before.movementId }, select: { productId: true } });
+      await propagateSplitCosts(tx, viewer.id, movement.productId);
       return before.partyId;
     });
     revalidatePath(`/karigars/${partyId}`);

@@ -3,8 +3,7 @@
 import { useFormAction } from "@/lib/use-form-action";
 import { useState } from "react";
 import { updateSaleInfo } from "../actions";
-import { POLISH_STATUS_OPTIONS, PAYMENT_STATUS_OPTIONS, computeTotalCost } from "@/lib/polish-status";
-import { formatMoney } from "@/lib/format";
+import { POLISH_STATUS_OPTIONS, PAYMENT_STATUS_OPTIONS } from "@/lib/polish-status";
 
 type Defaults = {
   status: string;
@@ -15,47 +14,14 @@ type Defaults = {
   soldPrice: number | null;
   soldDate: string | null;
   paymentStatus: string | null;
-  roughCostAlloc: number | null;
-  laborCost: number | null;
-  certCost: number | null;
-  otherCost: number | null;
 };
 
-type CostHints = {
-  roughCostAlloc: string | null;
-  laborCost: string | null;
-};
-
-export function SaleForm({
-  id,
-  defaults,
-  buyerNames,
-  costHints,
-  showCosts,
-}: {
-  id: string;
-  defaults: Defaults;
-  buyerNames: string[];
-  costHints?: CostHints;
-  // Cost fields (and margin) are only rendered for people allowed to see
-  // costs; the server ignores them from anyone else.
-  showCosts: boolean;
-}) {
+// Status, listing and sale details. Costs live in the stone's cost ledger
+// (shown separately to people who can see costs), not on this form.
+export function SaleForm({ id, defaults, buyerNames }: { id: string; defaults: Defaults; buyerNames: string[] }) {
   const boundAction = updateSaleInfo.bind(null, id);
   const [error, onSubmit, pending] = useFormAction(boundAction, undefined);
   const [status, setStatus] = useState(defaults.status);
-  const [currency, setCurrency] = useState(defaults.currency);
-
-  const [costs, setCosts] = useState({
-    roughCostAlloc: defaults.roughCostAlloc,
-    laborCost: defaults.laborCost,
-    certCost: defaults.certCost,
-    otherCost: defaults.otherCost,
-  });
-  const [soldPrice, setSoldPrice] = useState(defaults.soldPrice);
-
-  const totalCost = computeTotalCost(costs);
-  const margin = soldPrice !== null ? soldPrice - totalCost : null;
 
   return (
     <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-6">
@@ -113,21 +79,15 @@ export function SaleForm({
             <label htmlFor="currency" className="block text-sm font-medium text-zinc-700">
               Currency
             </label>
-            <input
+            <select
               id="currency"
               name="currency"
-              type="text"
-              list="currency-suggestions"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
+              defaultValue={defaults.currency === "INR" ? "INR" : "USD"}
               className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-            />
-            <datalist id="currency-suggestions">
-              <option value="USD" />
-              <option value="INR" />
-              <option value="EUR" />
-              <option value="GBP" />
-            </datalist>
+            >
+              <option value="USD">USD</option>
+              <option value="INR">INR</option>
+            </select>
           </div>
         </div>
       </fieldset>
@@ -168,7 +128,6 @@ export function SaleForm({
                 min={0}
                 step="0.01"
                 defaultValue={defaults.soldPrice ?? undefined}
-                onChange={(e) => setSoldPrice(e.target.value ? Number(e.target.value) : null)}
                 className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
               />
             </div>
@@ -206,61 +165,6 @@ export function SaleForm({
         </fieldset>
       )}
 
-      {showCosts && (
-      <fieldset className="flex flex-col gap-4 border-0 p-0">
-        <legend className="mb-1 w-full border-b border-zinc-200 pb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
-          Cost breakdown
-        </legend>
-        <div className="grid grid-cols-2 gap-4">
-          <CostField
-            label="Rough cost (allocated)"
-            name="roughCostAlloc"
-            value={costs.roughCostAlloc}
-            onChange={(v) => setCosts((c) => ({ ...c, roughCostAlloc: v }))}
-            hint={costHints?.roughCostAlloc ?? null}
-          />
-          <CostField
-            label="Labor cost"
-            name="laborCost"
-            value={costs.laborCost}
-            onChange={(v) => setCosts((c) => ({ ...c, laborCost: v }))}
-            hint={costHints?.laborCost ?? null}
-          />
-          <CostField
-            label="Certification cost"
-            name="certCost"
-            value={costs.certCost}
-            onChange={(v) => setCosts((c) => ({ ...c, certCost: v }))}
-          />
-          <CostField
-            label="Other cost"
-            name="otherCost"
-            value={costs.otherCost}
-            onChange={(v) => setCosts((c) => ({ ...c, otherCost: v }))}
-          />
-        </div>
-
-        {status === "SOLD" && (
-          <div className="flex flex-wrap gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
-            <div>
-              <p className="text-xs text-zinc-500">Total cost</p>
-              <p className="text-lg font-semibold text-zinc-900">{formatMoney(totalCost, currency)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-zinc-500">Margin</p>
-              <p
-                className={`text-lg font-semibold ${
-                  margin !== null && margin < 0 ? "text-red-600" : "text-emerald-700"
-                }`}
-              >
-                {margin !== null ? formatMoney(margin, currency) : "—"}
-              </p>
-            </div>
-          </div>
-        )}
-      </fieldset>
-      )}
-
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <button
@@ -274,35 +178,3 @@ export function SaleForm({
   );
 }
 
-function CostField({
-  label,
-  name,
-  value,
-  onChange,
-  hint,
-}: {
-  label: string;
-  name: string;
-  value: number | null;
-  onChange: (value: number | null) => void;
-  hint?: string | null;
-}) {
-  return (
-    <div>
-      <label htmlFor={name} className="block text-sm font-medium text-zinc-700">
-        {label}
-      </label>
-      <input
-        id={name}
-        name={name}
-        type="number"
-        min={0}
-        step="0.01"
-        defaultValue={value ?? undefined}
-        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
-        className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-      />
-      {hint && <p className="mt-1 text-xs text-zinc-400">{hint}</p>}
-    </div>
-  );
-}

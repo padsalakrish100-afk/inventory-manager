@@ -149,6 +149,35 @@ async function main() {
     });
   }
 
+  // Phase 4: a rough purchase with its assortment (allocate cost and lot the
+  // packets from the purchase page).
+  if (!(await prisma.roughPurchase.findUnique({ where: { purchaseNo: "RP-DEMO-001" } }))) {
+    const adminForSeed = users["demo.admin"];
+    await prisma.roughPurchase.create({
+      data: {
+        purchaseNo: "RP-DEMO-001",
+        partyId: vendor.id,
+        date: new Date("2026-09-15T12:00:00+05:30"),
+        source: "Antwerp tender Sept-26",
+        totalCarats: "42.500",
+        pieces: 18,
+        pricePerCarat: "1200.00",
+        totalAmount: "51000.00",
+        currency: "USD",
+        fxRate: "88.2500",
+        invoiceNo: "INV-ATW-7781",
+        kpCertNo: "BE-2026-KP-004512",
+        createdById: adminForSeed,
+        packets: {
+          create: [
+            { packetCode: "RP-DEMO-001-A", sizeRange: "2-4 ct", quality: "Clivage", model: "Old Mine makeable", carats: "24.300", pieces: 8 },
+            { packetCode: "RP-DEMO-001-B", sizeRange: "1-2 ct", quality: "Sawable", model: "Rose cut", carats: "18.100", pieces: 10 },
+          ],
+        },
+      },
+    });
+  }
+
   const lotNumber = "DEMO-LOT-001";
   if (await prisma.lot.findUnique({ where: { lotNumber } })) {
     await backfillDemoMovements();

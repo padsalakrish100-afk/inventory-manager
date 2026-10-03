@@ -14,6 +14,11 @@ import {
 import { UndoMovementButton } from "./undo-movement-button";
 import { DeleteStoneButton } from "./delete-stone-button";
 import { MoveLocationForm } from "./move-location-form";
+import { CostEntryForm, VoidCostButton } from "./cost-controls";
+import { stoneCosts, COST_SOURCE_LABELS, COST_TYPE_LABELS } from "@/lib/costing/ledger";
+import { formatInr, formatUsd } from "@/lib/money";
+import { formatMoney } from "@/lib/format";
+import { CUT_STYLE_LABELS } from "@/lib/cuts";
 
 const EVENT_STYLES: Record<string, string> = {
   CREATED: "bg-zinc-400",
@@ -67,6 +72,8 @@ export default async function StoneHubPage({ params }: { params: Promise<{ id: s
         include: { handledByParty: { select: { name: true } } },
         orderBy: { date: "desc" },
       },
+      plans: { where: { isFinal: true }, take: 1 },
+      _count: { select: { costEntries: true, plans: true } },
       events: {
         include: { user: { select: { name: true } } },
         orderBy: [{ at: "desc" }, { createdAt: "desc" }],
@@ -83,6 +90,8 @@ export default async function StoneHubPage({ params }: { params: Promise<{ id: s
       })
     : [];
 
+  const cost = can(viewer, "costs.view") ? (await stoneCosts(prisma, [stone.id])).get(stone.id)! : null;
+  const finalPlan = stone.plans[0] ?? null;
   const canEdit = can(viewer, "stones.edit");
   const canIssue = can(viewer, "mfg.issueReturn");
   const showCosts = can(viewer, "costs.view");
@@ -267,6 +276,106 @@ export default async function StoneHubPage({ params }: { params: Promise<{ id: s
         </section>
       )}
 
+      {/* Plan */}
+      <section className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white p-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Plan</p>
+          {finalPlan ? (
+            <p className="text-sm text-zinc-900">
+              {finalPlan.plannedShape}
+              {finalPlan.plannedCutStyle ? ` · ${CUT_STYLE_LABELS[finalPlan.plannedCutStyle] ?? ""}` : ""} ·{" "}
+              {Number(finalPlan.plannedWeight).toFixed(3)} ct
+              {[finalPlan.expColor, finalPlan.expClarity].filter(Boolean).length
+                ? ` · ${[finalPlan.expColor, finalPlan.expClarity].filter(Boolean).join(" ")}`
+                : ""}
+              {finalPlan.expectedValue !== null ? ` · ${formatMoney(Number(finalPlan.expectedValue), finalPlan.currency)}` : ""}
+            </p>
+          ) : (
+            <p className="text-sm text-zinc-500">No plan yet.</p>
+          )}
+        </div>
+        <Link href={`/stones/${stone.id}/plan`} className="min-h-10 rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+          {finalPlan ? "Plans" : "Add plan"}
+        </Link>
+      </section>
+
+      {/* Cost (cost viewers only) */}
+      {cost && (
+        <section className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold text-zinc-900">Cost</h2>
+            {stone.status === "SPLIT" && (
+              <p className="text-sm text-zinc-500">This stone was split — its cost has been passed to its children.</p>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Total (USD)" value={formatUsd(cost.usdCents / 100)} />
+            <Stat label="Total (INR)" value={formatInr(cost.inrCents / 100)} />
+            <Stat
+              label="Per carat (USD)"
+              value={(() => {
+                const ct = stone.polishedStone?.caratWeight ?? stone.caratWeight;
+                return ct ? formatUsd(cost.usdCents / 100 / ct) : "—";
+              })()}
+            />
+            <Stat
+              label="Per carat (INR)"
+              value={(() => {
+                const ct = stone.polishedStone?.caratWeight ?? stone.caratWeight;
+                return ct ? formatInr(cost.inrCents / 100 / ct) : "—";
+              })()}
+            />
+          </div>
+          {(cost.missingUsd > 0 || cost.missingInr > 0) && (
+            <p className="text-xs text-amber-700">
+              {Math.max(cost.missingUsd, cost.missingInr)} line(s) have no exchange rate recorded, so they&apos;re only in
+              their own currency and left out of the other total.
+            </p>
+          )}
+          <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Date</th>
+                  <th className="px-4 py-2 font-medium">Cost</th>
+                  <th className="px-4 py-2 font-medium">From</th>
+                  <th className="px-4 py-2 font-medium text-right">Amount</th>
+                  <th className="px-4 py-2 font-medium text-right">USD</th>
+                  <th className="px-4 py-2 font-medium text-right">INR</th>
+                  <th className="px-4 py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {cost.lines.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-zinc-500">
+                      No costs yet.
+                    </td>
+                  </tr>
+                )}
+                {cost.lines.map((l) => (
+                  <tr key={`${l.kind}-${l.id}`} className="border-b border-zinc-100 last:border-0">
+                    <td className="px-4 py-2 whitespace-nowrap text-zinc-600">{formatDate(l.date)}</td>
+                    <td className="px-4 py-2">{COST_TYPE_LABELS[l.type]}</td>
+                    <td className="px-4 py-2 text-zinc-600">
+                      {COST_SOURCE_LABELS[l.sourceType] ?? l.sourceType}
+                      {l.note && <span className="block text-xs text-zinc-400">{l.note}</span>}
+                    </td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">{formatMoney(Number(l.amount), l.currency)}</td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap text-zinc-600">{formatUsd(l.usd)}</td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap text-zinc-600">{formatInr(l.inr)}</td>
+                    <td className="px-4 py-2 text-right">
+                      {l.kind === "entry" && ["MANUAL", "LEGACY_POLISH"].includes(l.sourceType) && <VoidCostButton entryId={l.id} />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {stone.status !== "SPLIT" && <CostEntryForm stoneId={stone.id} />}
+        </section>
+      )}
+
       {/* Timeline */}
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold text-zinc-900">Timeline</h2>
@@ -401,7 +510,15 @@ export default async function StoneHubPage({ params }: { params: Promise<{ id: s
         </section>
       )}
 
-      {canEdit && stone.movements.length === 0 && !stone.polishedStone && stone.children.length === 0 && !stone.parentId && stone.breakages.length === 0 && (
+      {canEdit &&
+        stone.movements.length === 0 &&
+        !stone.polishedStone &&
+        stone.children.length === 0 &&
+        !stone.parentId &&
+        stone.breakages.length === 0 &&
+        !finalPlan &&
+        stone._count.costEntries === 0 &&
+        stone._count.plans === 0 && (
         <div>
           <DeleteStoneButton productId={stone.id} lotId={stone.lotId} />
         </div>

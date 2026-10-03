@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { can, ForbiddenError, requirePermission } from "@/lib/authz";
 import { TX_OPTIONS, writeAudit } from "@/lib/audit";
 import { usdInrOn } from "@/lib/fx";
+import { AllocationError, allocateJobWorkBill } from "@/lib/costing/allocate";
 import { dateInputToInstant } from "@/lib/dates";
 import { formToObject, parseInput, zCurrency, zDateString, zId, zMoney, zOptionalText, zRequiredText } from "@/lib/validation";
 
@@ -73,6 +74,7 @@ export async function createJobWorkBill(_prev: string | undefined, formData: For
       });
       if (movements.length) {
         await tx.processMovement.updateMany({ where: { id: { in: movements.map((m) => m.id) } }, data: { jobWorkBillId: bill.id } });
+        await allocateJobWorkBill(tx, viewer.id, bill.id);
       }
       await writeAudit(tx, viewer.id, {
         action: "CREATE",
@@ -82,7 +84,7 @@ export async function createJobWorkBill(_prev: string | undefined, formData: For
       });
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserError || err instanceof AllocationError) return err.message;
     throw err;
   }
 
@@ -97,8 +99,9 @@ export async function voidJobWorkBill(billId: string): Promise<{ error?: string 
     await prisma.$transaction(async (tx) => {
       const before = await tx.jobWorkBill.findUnique({ where: { id: billId } });
       if (!before || before.voidedAt) throw new UserError("Bill not found.");
-      await tx.processMovement.updateMany({ where: { jobWorkBillId: billId }, data: { jobWorkBillId: null } });
       const after = await tx.jobWorkBill.update({ where: { id: billId }, data: { voidedAt: new Date() } });
+      await allocateJobWorkBill(tx, viewer.id, billId); // voids the bill's cost entries
+      await tx.processMovement.updateMany({ where: { jobWorkBillId: billId }, data: { jobWorkBillId: null } });
       await writeAudit(tx, viewer.id, { action: "VOID", entity: "JobWorkBill", entityId: billId, before, after });
     });
   } catch (err) {

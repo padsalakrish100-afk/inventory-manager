@@ -681,7 +681,16 @@ export async function deleteStone(productId: string) {
       include: {
         polishedStone: true,
         _count: {
-          select: { movements: true, transactions: true, processLogs: true, children: true, breakages: true, splits: true },
+          select: {
+            movements: true,
+            transactions: true,
+            processLogs: true,
+            children: true,
+            breakages: true,
+            splits: true,
+            costEntries: true,
+            plans: true,
+          },
         },
       },
     });
@@ -690,6 +699,8 @@ export async function deleteStone(productId: string) {
     if (product._count.movements > 0) throw new Error("This stone has movement history — can't delete it.");
     if (product._count.children > 0 || product._count.splits > 0) throw new Error("This stone has been split — can't delete it.");
     if (product._count.breakages > 0) throw new Error("This stone has a breakage record — can't delete it.");
+    if (product._count.costEntries > 0) throw new Error("This stone has costs recorded — can't delete it.");
+    if (product._count.plans > 0) throw new Error("This stone has a plan — can't delete it.");
     if (product.parentId) throw new Error("This stone came from a split — can't delete it.");
     if (product._count.transactions > 0 || product._count.processLogs > 0) {
       throw new Error(

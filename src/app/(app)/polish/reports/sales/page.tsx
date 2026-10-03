@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { PAYMENT_STATUS_LABELS, PAYMENT_STATUS_STYLES, computeTotalCost } from "@/lib/polish-status";
+import { PAYMENT_STATUS_LABELS, PAYMENT_STATUS_STYLES } from "@/lib/polish-status";
+import { stoneCosts } from "@/lib/costing/ledger";
 import { formatMoney } from "@/lib/format";
 import { ExportButtons } from "@/components/export-buttons";
 import { can, requirePagePermission } from "@/lib/authz";
@@ -38,8 +39,11 @@ export default async function SalesReportPage({
     }),
   ]);
 
+  // Cost from each stone's ledger, in the stone's sale currency.
+  const costs = showCosts ? await stoneCosts(prisma, stones.map((p) => p.sourceProductId)) : new Map();
   const rows = stones.map((p) => {
-    const totalCost = computeTotalCost(p);
+    const c = costs.get(p.sourceProductId);
+    const totalCost = c ? (p.currency === "INR" ? c.inrCents : c.usdCents) / 100 : 0;
     const margin = p.soldPrice !== null ? p.soldPrice - totalCost : null;
     return { stone: p, totalCost, margin };
   });

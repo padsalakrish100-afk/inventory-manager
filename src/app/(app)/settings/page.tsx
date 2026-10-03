@@ -40,7 +40,10 @@ export default async function SettingsPage() {
       <section className="max-w-md rounded-lg border border-zinc-200 bg-white p-5">
         <h2 className="font-medium text-zinc-900">General</h2>
         <div className="mt-4">
-          <GeneralSettingsForm pendingAlertDays={setting?.pendingAlertDays ?? 7} />
+          <GeneralSettingsForm
+            pendingAlertDays={setting?.pendingAlertDays ?? 7}
+            costAllocationMethod={setting?.costAllocationMethod ?? "WEIGHT"}
+          />
         </div>
       </section>
     </div>

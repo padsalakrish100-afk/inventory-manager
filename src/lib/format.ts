@@ -17,7 +17,8 @@ export function formatNumber(value: number): string {
 // so formatting it needs to respect that instead of assuming INR.
 export function formatMoney(value: number, currency: string = "USD"): string {
   try {
-    return new Intl.NumberFormat("en-US", {
+    // Rupees use Indian digit grouping (₹2,50,000.00); everything else US.
+    return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
       style: "currency",
       currency,
       maximumFractionDigits: 2,

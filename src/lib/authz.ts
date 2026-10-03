@@ -23,6 +23,7 @@ export type Permission =
   | "mfg.view" // Manufacturing pages
   | "mfg.issueReturn" // Issue / return (operators: own departments only)
   | "mfg.reports"
+  | "plans.edit" // stone plans (planned shape/weight/value, Sarine files)
   | "karigars.manage" // karigar master, rate cards, job-work (amounts also need costs.view)
   | "stock.view" // Polish / polished stock
   | "stock.edit"
@@ -38,6 +39,7 @@ const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "mfg.view",
     "mfg.issueReturn",
     "mfg.reports",
+    "plans.edit",
     "karigars.manage",
     "stock.view",
     "stock.edit",
@@ -52,12 +54,13 @@ const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "mfg.view",
     "mfg.issueReturn",
     "mfg.reports",
+    "plans.edit",
     "karigars.manage",
     "stock.view",
     "stock.edit",
     "sales.reports",
   ],
-  OPERATOR: ["stones.view", "mfg.view", "mfg.issueReturn"],
+  OPERATOR: ["stones.view", "mfg.view", "mfg.issueReturn", "plans.edit"],
   SALES: ["stones.view", "stock.view"],
 };
 

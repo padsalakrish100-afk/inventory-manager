@@ -9,7 +9,8 @@ import { POLISH_STATUS_LABELS, POLISH_STATUS_STYLES } from "@/lib/polish-status"
 import { formatMoney } from "@/lib/format";
 import { can, requirePagePermission } from "@/lib/authz";
 import { formatDate } from "@/lib/dates";
-import { usdInrOn } from "@/lib/fx";
+import { stoneCosts } from "@/lib/costing/ledger";
+import { formatInr, formatUsd } from "@/lib/money";
 
 export default async function PolishedStoneDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const viewer = await requirePagePermission("stock.view");
@@ -23,12 +24,7 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
         buyer: true,
         sourceProduct: {
           include: {
-            lot: {
-              include: {
-                sourceParty: true,
-                products: { include: { movements: { where: { voidedAt: null }, orderBy: { issueDate: "asc" }, take: 1 } } },
-              },
-            },
+            lot: { include: { sourceParty: true } },
             movements: {
               where: { voidedAt: null },
               include: { party: true, stage: { select: { name: true } } },
@@ -46,44 +42,11 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
   if (!polished) notFound();
 
   const source = polished.sourceProduct;
-  const lot = source.lot;
 
-  // Labour: the karigar labour entries for this stone (INR), converted to the
-  // stone's currency at today's exchange rate when that's USD.
-  const labourEntries = showCosts
-    ? await prisma.labourEntry.findMany({
-        where: { voidedAt: null, movement: { productId: source.id } },
-        select: { amount: true },
-      })
-    : [];
-  const labourInr = labourEntries.reduce((sum, l) => sum + Number(l.amount), 0);
-  const fx = polished.currency === "USD" ? await usdInrOn(prisma, new Date()) : null;
-  const laborCostSum =
-    polished.currency === "INR" ? labourInr : fx ? Math.round((labourInr / Number(fx)) * 100) / 100 : 0;
-  const laborCostHint =
-    labourEntries.length > 0
-      ? `Auto: ₹${labourInr.toFixed(2)} across ${labourEntries.length} process${labourEntries.length === 1 ? "" : "es"}` +
-        (polished.currency === "USD" ? (fx ? ` = ${formatMoney(laborCostSum, "USD")} at ₹${Number(fx)}/USD` : " (set an exchange rate to convert)") : "")
-      : null;
-
-  // Rough cost: this stone's original (pre-manufacturing) weight is its
-  // earliest movement's issue weight, or its current weight if it was
-  // never issued anywhere before reaching Polish. Allocated as a share of
-  // the lot's total purchase cost, proportional to that weight.
-  function originalWeightOf(p: { caratWeight: number | null; movements: { issueWeight: number | null }[] }) {
-    return p.movements.length > 0 ? p.movements[0].issueWeight : p.caratWeight;
-  }
-  const thisStoneOriginalWeight = originalWeightOf(source);
-
-  let roughCostSuggestion: number | null = null;
-  let roughCostHint: string | null = null;
-  if (lot?.purchaseCost && thisStoneOriginalWeight) {
-    const totalWeight = lot.products.reduce((sum, p) => sum + (originalWeightOf(p) ?? 0), 0);
-    if (totalWeight > 0) {
-      roughCostSuggestion = lot.purchaseCost * (thisStoneOriginalWeight / totalWeight);
-      roughCostHint = `Auto: ${formatMoney(lot.purchaseCost, polished.currency)} lot cost × ${thisStoneOriginalWeight}/${totalWeight.toFixed(2)} ct share`;
-    }
-  }
+  // Cost and margin from the stone's ledger, in the sale currency.
+  const cost = showCosts ? (await stoneCosts(prisma, [source.id])).get(source.id)! : null;
+  const costInSaleCurrency = cost ? (polished.currency === "INR" ? cost.inrCents : cost.usdCents) / 100 : null;
+  const margin = costInSaleCurrency !== null && polished.soldPrice !== null ? polished.soldPrice - costInSaleCurrency : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -131,7 +94,6 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
         <h2 className="text-lg font-semibold text-zinc-900">{showCosts ? "Sales & cost" : "Sales"}</h2>
         <SaleForm
           id={polished.id}
-          showCosts={showCosts}
           buyerNames={parties.map((p) => p.name)}
           defaults={{
             status: polished.status,
@@ -142,15 +104,33 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
             soldPrice: polished.soldPrice,
             soldDate: polished.soldDate ? polished.soldDate.toISOString().slice(0, 10) : null,
             paymentStatus: polished.paymentStatus,
-            // Never sent to the browser for people who can't see costs.
-            roughCostAlloc: showCosts ? (polished.roughCostAlloc ?? roughCostSuggestion) : null,
-            laborCost: showCosts ? (polished.laborCost ?? (laborCostSum > 0 ? laborCostSum : null)) : null,
-            certCost: showCosts ? polished.certCost : null,
-            otherCost: showCosts ? polished.otherCost : null,
           }}
-          costHints={showCosts ? { roughCostAlloc: roughCostHint, laborCost: laborCostHint } : undefined}
         />
       </section>
+      {cost && (
+        <section className="flex max-w-2xl flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-4">
+          <h2 className="font-medium text-zinc-900">Cost &amp; margin</h2>
+          <p className="text-sm text-zinc-600">
+            Total cost: <span className="font-medium text-zinc-900">{formatUsd(cost.usdCents / 100)}</span> ·{" "}
+            {formatInr(cost.inrCents / 100)}
+            {polished.caratWeight ? ` · ${formatUsd(cost.usdCents / 100 / polished.caratWeight)}/ct` : ""}
+          </p>
+          {polished.askingPrice !== null && costInSaleCurrency !== null && costInSaleCurrency > 0 && (
+            <p className="text-sm text-zinc-600">
+              Asking is {(((polished.askingPrice - costInSaleCurrency) / costInSaleCurrency) * 100).toFixed(1)}% over cost.
+            </p>
+          )}
+          {margin !== null && (
+            <p className={`text-sm font-medium ${margin < 0 ? "text-red-700" : "text-emerald-700"}`}>
+              Profit on sale: {formatMoney(margin, polished.currency)} (
+              {costInSaleCurrency ? ((margin / costInSaleCurrency) * 100).toFixed(1) : "—"}% on cost)
+            </p>
+          )}
+          <Link href={`/stones/${source.id}`} className="text-sm text-zinc-600 underline">
+            Full cost ledger
+          </Link>
+        </section>
+      )}
       </fieldset>
 
       <section className="flex max-w-2xl flex-col gap-3">

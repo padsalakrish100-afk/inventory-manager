@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { dateInputToInstant } from "@/lib/dates";
 import type { PolishStatus, PaymentStatus, SaleType } from "@/generated/prisma/client";
 import { POLISH_STATUS_VALUES, PAYMENT_STATUS_VALUES, SALE_TYPE_VALUES, POLISH_STATUS_LABELS } from "@/lib/polish-status";
-import { can, requirePermission } from "@/lib/authz";
+import { requirePermission } from "@/lib/authz";
 import { TX_OPTIONS, writeAudit, type AuditEntry } from "@/lib/audit";
 import { recordStoneEvents } from "@/lib/stone/events";
 import { ensurePartyWithRole } from "@/lib/party";
@@ -78,18 +78,12 @@ const saleSchema = z.object({
   askingPrice: zOptionalMoney("Asking price"),
   soldPrice: zOptionalMoney("Sold price"),
   soldDate: zDateString("Sold date"),
-  roughCostAlloc: zOptionalMoney("Rough cost"),
-  laborCost: zOptionalMoney("Labor cost"),
-  certCost: zOptionalMoney("Certification cost"),
-  otherCost: zOptionalMoney("Other cost"),
 });
 
-const COST_FIELDS = ["roughCostAlloc", "laborCost", "certCost", "otherCost"] as const;
-
-// Sales & cost tracking for a polished stone — status, where it's kept, its
-// asking price, the buyer/sale details once sold, and the cost components
-// that make up its total cost. The stone's lifecycle status and location
-// follow the sale status.
+// Sales tracking for a polished stone — status, where it's kept, its asking
+// price, and the buyer/sale details once sold. Costs are in the stone's cost
+// ledger, not here (the old cost columns are kept untouched for history).
+// The stone's lifecycle status and location follow the sale status.
 export async function updateSaleInfo(
   polishedStoneId: string,
   _prevState: string | undefined,
@@ -103,7 +97,6 @@ export async function updateSaleInfo(
   const parsed = parseInput(saleSchema, raw);
   if (!parsed.ok) return parsed.error;
   const d = parsed.data;
-  const canSeeCosts = can(viewer, "costs.view");
 
   const money = (v: string | null) => (v !== null ? Number(v) : null);
 
@@ -143,9 +136,6 @@ export async function updateSaleInfo(
           soldPrice: money(d.soldPrice),
           soldDate: d.soldDate ? dateInputToInstant(d.soldDate) : null,
           paymentStatus: d.paymentStatus as PaymentStatus | null,
-          // Cost fields are hidden from people who can't see costs, so their
-          // (absent) values must not wipe what's stored.
-          ...(canSeeCosts ? Object.fromEntries(COST_FIELDS.map((f) => [f, money(d[f])])) : {}),
         },
       });
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/authz";
-import { FxForm } from "./fx-form";
+import { FillMissingButton, FxForm } from "./fx-form";
 
 export default async function ExchangeRatesPage() {
   await requirePagePermission("admin");
@@ -20,6 +20,7 @@ export default async function ExchangeRatesPage() {
         </Link>
       </div>
       <FxForm />
+      <FillMissingButton />
       <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">

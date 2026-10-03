@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/authz";
-import { writeAudit } from "@/lib/audit";
+import { TX_OPTIONS, writeAudit } from "@/lib/audit";
+import { inBothCurrencies } from "@/lib/money";
 import { formToObject, parseInput, zRequiredText } from "@/lib/validation";
 import { dateInputToStartOfDayIST } from "@/lib/dates";
 
@@ -235,17 +236,78 @@ export async function setExchangeRate(_prev: string | undefined, formData: FormD
   revalidatePath("/settings/fx");
 }
 
+// Entries made before any exchange rate was entered (or migrated from the
+// old app) have no rate, so they're missing from the other currency's
+// totals. This fills each one with the rate in force on its own date —
+// only where such a rate exists — and records what it changed.
+export async function fillMissingExchangeRates(): Promise<{ info: string }> {
+  const viewer = await requirePermission("admin");
+  const result = await prisma.$transaction(async (tx) => {
+    const rates = await tx.exchangeRate.findMany({ orderBy: { date: "asc" } });
+    const rateOn = (d: Date) => {
+      let found: string | null = null;
+      for (const r of rates) {
+        if (r.date <= d) found = r.usdInr.toString();
+        else break;
+      }
+      return found;
+    };
+    let labour = 0;
+    let adjustments = 0;
+    let costs = 0;
+
+    for (const l of await tx.labourEntry.findMany({ where: { fxRate: null }, select: { id: true, workDate: true } })) {
+      const fx = rateOn(l.workDate);
+      if (!fx) continue;
+      await tx.labourEntry.update({ where: { id: l.id }, data: { fxRate: fx } });
+      labour++;
+    }
+    for (const a of await tx.karigarAdjustment.findMany({ where: { fxRate: null }, select: { id: true, date: true } })) {
+      const fx = rateOn(a.date);
+      if (!fx) continue;
+      await tx.karigarAdjustment.update({ where: { id: a.id }, data: { fxRate: fx } });
+      adjustments++;
+    }
+    for (const c of await tx.costEntry.findMany({
+      where: { fxRate: null, voidedAt: null },
+      select: { id: true, date: true, amount: true, currency: true },
+    })) {
+      const fx = rateOn(c.date);
+      if (!fx) continue;
+      const both = inBothCurrencies(c.amount, c.currency, fx);
+      await tx.costEntry.update({ where: { id: c.id }, data: { fxRate: fx, amountUsd: both.usd, amountInr: both.inr } });
+      costs++;
+    }
+    await writeAudit(tx, viewer.id, {
+      action: "BULK_UPDATE",
+      entity: "ExchangeRate",
+      entityId: "fill-missing",
+      after: { labourEntries: labour, adjustments, costEntries: costs },
+    });
+    return { labour, adjustments, costs };
+  }, TX_OPTIONS);
+
+  revalidatePath("/settings/fx");
+  return {
+    info: `Filled ${result.labour} labour entries, ${result.adjustments} advances/deductions and ${result.costs} cost entries. Entries dated before your first rate were left as they are.`,
+  };
+}
+
 const generalSchema = z.object({
   pendingAlertDays: z.coerce
     .number({ message: "Pending alert days must be a number." })
     .int("Pending alert days must be a whole number.")
     .min(1, "Pending alert days must be at least 1.")
     .max(365, "Pending alert days must be 365 or less."),
+  costAllocationMethod: z.enum(["WEIGHT", "EQUAL"], { message: "Choose how shared costs are divided." }),
 });
 
 export async function updateGeneralSettings(_prev: string | undefined, formData: FormData): Promise<string | undefined> {
   const viewer = await requirePermission("admin");
-  const parsed = parseInput(generalSchema, { pendingAlertDays: String(formData.get("pendingAlertDays") ?? "") });
+  const parsed = parseInput(generalSchema, {
+    pendingAlertDays: String(formData.get("pendingAlertDays") ?? ""),
+    costAllocationMethod: String(formData.get("costAllocationMethod") ?? "WEIGHT"),
+  });
   if (!parsed.ok) return parsed.error;
 
   await prisma.$transaction(async (tx) => {

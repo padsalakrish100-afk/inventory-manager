@@ -6,7 +6,8 @@ import { karigarPerformance } from "@/lib/karigar/performance";
 import { prisma } from "@/lib/prisma";
 import { buildExcelBuffer, excelResponse, type ExportColumn } from "@/lib/export/excel";
 import { buildPdfBuffer, pdfResponse, type PdfColumn } from "@/lib/export/pdf";
-import { POLISH_STATUS_LABELS, SALE_TYPE_LABELS, PAYMENT_STATUS_LABELS, daysInStock, computeTotalCost } from "@/lib/polish-status";
+import { POLISH_STATUS_LABELS, SALE_TYPE_LABELS, PAYMENT_STATUS_LABELS, daysInStock } from "@/lib/polish-status";
+import { stoneCosts } from "@/lib/costing/ledger";
 import { PROCESS_LABELS } from "@/lib/process";
 import { formatMoney } from "@/lib/format";
 import type { PolishStatus } from "@/generated/prisma/client";
@@ -152,6 +153,7 @@ async function buildReport(
         include: { buyer: true },
         orderBy: { soldDate: "desc" },
       });
+      const costs = showCosts ? await stoneCosts(prisma, stones.map((p) => p.sourceProductId)) : new Map();
 
       return {
         title: "Sales report",
@@ -170,7 +172,8 @@ async function buildReport(
           { header: "Payment", key: "payment" },
         ],
         rows: stones.map((p) => {
-          const totalCost = computeTotalCost(p);
+          const c = costs.get(p.sourceProductId);
+          const totalCost = c ? (p.currency === "INR" ? c.inrCents : c.usdCents) / 100 : 0;
           const margin = p.soldPrice !== null ? p.soldPrice - totalCost : null;
           return {
             stockId: p.stockId,

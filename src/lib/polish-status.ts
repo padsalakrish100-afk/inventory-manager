@@ -54,19 +54,6 @@ export const SALE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
   SALE_TYPE_OPTIONS.map((s) => [s.value, s.label]),
 );
 
-// Total cost is derived, never stored — always the sum of whichever cost
-// components have been entered so far.
-export function computeTotalCost(stone: {
-  roughCostAlloc: number | null;
-  laborCost: number | null;
-  certCost: number | null;
-  otherCost: number | null;
-}): number {
-  return (
-    (stone.roughCostAlloc ?? 0) + (stone.laborCost ?? 0) + (stone.certCost ?? 0) + (stone.otherCost ?? 0)
-  );
-}
-
 export function daysInStock(createdAt: Date): number {
   const ms = Date.now() - createdAt.getTime();
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));

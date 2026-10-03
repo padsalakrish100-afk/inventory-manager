@@ -8,6 +8,8 @@ import { PurchaseCostEditor } from "./purchase-cost-editor";
 import { can, requirePagePermission } from "@/lib/authz";
 import { formatDate } from "@/lib/dates";
 import { STONE_STATUS_LABELS, STONE_STATUS_STYLES } from "@/lib/stone/status";
+import { formatMoney } from "@/lib/format";
+import { LotCostPanel } from "./lot-cost-panel";
 
 export default async function LotDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const viewer = await requirePagePermission("lots.manage");
@@ -17,6 +19,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
     where: { id },
     include: {
       sourceParty: true,
+      packet: { include: { purchase: { select: { id: true, purchaseNo: true, currency: true, fxRate: true } } } },
       products: {
         orderBy: { sku: "asc" },
         include: {
@@ -43,6 +46,31 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
   const diffPercent = showVarianceCheck && lot.roughWeight ? (diff / lot.roughWeight) * 100 : 0;
   const flagged = showVarianceCheck && allWeighed && Math.abs(diffPercent) > 2;
 
+  // Rough cost currently on each stone (cost viewers only).
+  const roughEntries = showCost
+    ? await prisma.costEntry.findMany({
+        where: { stoneId: { in: lot.products.map((p) => p.id) }, type: "ROUGH", voidedAt: null, sourceType: { not: "SPLIT" } },
+        select: { stoneId: true, amount: true, currency: true },
+      })
+    : [];
+  const roughBy = new Map(roughEntries.map((e) => [e.stoneId, e]));
+  const roughTotals = new Map<string, number>();
+  for (const e of roughEntries) roughTotals.set(e.currency, (roughTotals.get(e.currency) ?? 0) + Number(e.amount));
+  const allocatedLabel =
+    roughTotals.size > 0 ? [...roughTotals.entries()].map(([c, v]) => formatMoney(v, c)).join(" + ") : null;
+  const costSource = lot.packet ? "packet" : lot.purchaseCost !== null ? "legacy" : "none";
+  const costCurrency = lot.packet ? lot.packet.purchase.currency : lot.purchaseCurrency;
+  const costAmount = lot.packet
+    ? lot.packet.costShare !== null
+      ? formatMoney(Number(lot.packet.costShare), lot.packet.purchase.currency)
+      : null
+    : lot.purchaseCost !== null
+      ? lot.purchaseCurrency
+        ? formatMoney(lot.purchaseCost, lot.purchaseCurrency)
+        : lot.purchaseCost.toLocaleString("en-IN")
+      : null;
+  const stonesWithoutWeight = lot.products.filter((p) => !p.parentId && p.roughWeight === null && p.caratWeight === null).length;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between">
@@ -51,7 +79,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-zinc-500">
             <span>Source: {lot.sourceParty?.name ?? "—"}</span>
             <span>&middot; Rough weight: {lot.roughWeight ?? "—"} ct</span>
-            {showCost && (
+            {showCost && !lot.packet && (
               <>
                 <span>&middot; Purchase cost:</span>
                 <PurchaseCostEditor lotId={lot.id} initialCost={lot.purchaseCost} roughWeight={lot.roughWeight} />
@@ -59,6 +87,15 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
             )}
             <span>&middot; {formatDate(lot.createdAt)}</span>
           </p>
+          {lot.packet && (
+            <p className="mt-1 text-sm text-zinc-500">
+              From packet <span className="font-mono">{lot.packet.packetCode}</span> of{" "}
+              <Link href={`/rough/${lot.packet.purchase.id}`} className="underline">
+                {lot.packet.purchase.purchaseNo}
+              </Link>
+              {lot.description ? ` · ${lot.description}` : ""}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {lot.products.length > 0 && (
@@ -78,6 +115,18 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
         <StatCard label="Available (not issued)" value={String(availableCount)} />
         <StatCard label="Transferred to Polish" value={String(polishedCount)} />
       </div>
+
+      {showCost && (
+        <LotCostPanel
+          lotId={lot.id}
+          source={costSource}
+          amountLabel={costAmount}
+          currency={costCurrency}
+          fxRate={lot.packet ? (lot.packet.purchase.fxRate?.toString() ?? null) : (lot.purchaseFxRate?.toString() ?? null)}
+          allocatedLabel={allocatedLabel}
+          stonesWithoutWeight={stonesWithoutWeight}
+        />
+      )}
 
       {showVarianceCheck && (
         <div
@@ -108,6 +157,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
               <th className="px-4 py-3 font-medium">Stone number</th>
               <th className="px-4 py-3 font-medium">Weight</th>
               <th className="px-4 py-3 font-medium">Current location</th>
+              {showCost && <th className="px-4 py-3 font-medium text-right">Rough cost</th>}
               <th className="px-4 py-3 font-medium"></th>
             </tr>
           </thead>
@@ -140,6 +190,11 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
                     </span>
                   )}
                 </td>
+                {showCost && (
+                  <td className="px-4 py-3 text-right whitespace-nowrap text-zinc-600">
+                    {roughBy.has(p.id) ? formatMoney(Number(roughBy.get(p.id)!.amount), roughBy.get(p.id)!.currency) : "—"}
+                  </td>
+                )}
                 <td className="px-4 py-3 text-right">
                   <Link href={`/stones/${p.id}`} className="text-zinc-600 hover:underline">
                     Details

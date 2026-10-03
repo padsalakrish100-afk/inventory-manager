@@ -5,24 +5,14 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { can, ForbiddenError, requirePermission } from "@/lib/authz";
-import { TX_OPTIONS, writeAudit, type Tx } from "@/lib/audit";
+import { TX_OPTIONS, writeAudit } from "@/lib/audit";
+import { createLotWithStones } from "@/lib/lot";
+import { AllocationError, allocateLotRough } from "@/lib/costing/allocate";
+import { toCents } from "@/lib/money";
+import { usdInrOn } from "@/lib/fx";
 import { recordStoneEvents } from "@/lib/stone/events";
 import { ensurePartyWithRole } from "@/lib/party";
 import { parseInput, zOptionalCarat, zOptionalMoney, zRequiredText } from "@/lib/validation";
-
-async function nextLotNumber(tx: Tx): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `LOT-${year}-`;
-  const existing = await tx.lot.findMany({
-    where: { lotNumber: { startsWith: prefix } },
-    select: { lotNumber: true },
-  });
-  const usedIndexes = existing
-    .map((l) => Number(l.lotNumber.slice(prefix.length)))
-    .filter((n) => Number.isInteger(n));
-  const next = usedIndexes.length > 0 ? Math.max(...usedIndexes) + 1 : 1;
-  return `${prefix}${String(next).padStart(3, "0")}`;
-}
 
 const createLotSchema = z.object({
   sourceParty: zRequiredText("Source (tender or party)"),
@@ -59,43 +49,12 @@ export async function createLot(
 
   const lotId = await prisma.$transaction(async (tx) => {
     const sourceParty = await ensurePartyWithRole(tx, viewer.id, sourcePartyName, "VENDOR");
-    const lotNumber = await nextLotNumber(tx);
-
-    const lot = await tx.lot.create({
-      data: {
-        lotNumber,
-        roughWeight: roughWeight !== null ? Number(roughWeight) : null,
-        purchaseCost: purchaseCost !== null ? Number(purchaseCost) : null,
-        sourcePartyId: sourceParty.id,
-      },
+    const lot = await createLotWithStones(tx, viewer.id, {
+      sourcePartyId: sourceParty.id,
+      roughWeight: roughWeight !== null ? Number(roughWeight) : null,
+      purchaseCost: purchaseCost !== null ? Number(purchaseCost) : null,
+      stoneCount,
     });
-
-    const skus = Array.from({ length: stoneCount }, (_, i) => `${lotNumber}-${String(i + 1).padStart(4, "0")}`);
-    await tx.product.createMany({
-      data: skus.map((sku) => ({ sku, name: sku, unit: "pcs", stock: 1, lotId: lot.id })),
-    });
-    const created = await tx.product.findMany({ where: { lotId: lot.id }, select: { id: true } });
-
-    await recordStoneEvents(
-      tx,
-      created.map((p) => ({
-        stoneId: p.id,
-        type: "CREATED" as const,
-        userId: viewer.id,
-        refType: "Lot",
-        refId: lot.id,
-        summary: `Created in lot ${lotNumber}`,
-      })),
-    );
-    await writeAudit(tx, viewer.id, [
-      { action: "CREATE", entity: "Lot", entityId: lot.id, after: lot },
-      {
-        action: "BULK_CREATE",
-        entity: "Product",
-        entityId: lot.id,
-        after: { lotId: lot.id, count: skus.length, first: skus[0], last: skus[skus.length - 1] },
-      },
-    ]);
     return lot.id;
   }, TX_OPTIONS);
 
@@ -117,16 +76,20 @@ export async function deleteLot(lotId: string) {
         products: {
           include: {
             polishedStone: true,
-            _count: { select: { movements: true, transactions: true, processLogs: true, children: true } },
+            _count: {
+              select: { movements: true, transactions: true, processLogs: true, children: true, costEntries: true, plans: true },
+            },
           },
         },
       },
     });
     if (!lot) throw new Error("Lot not found.");
 
-    const hasHistory = lot.products.some((p) => p.polishedStone || p._count.movements > 0 || p._count.children > 0);
+    const hasHistory = lot.products.some(
+      (p) => p.polishedStone || p._count.movements > 0 || p._count.children > 0 || p._count.costEntries > 0 || p._count.plans > 0,
+    );
     if (hasHistory) {
-      throw new Error("This lot has stones with manufacturing history — can't delete it.");
+      throw new Error("This lot has stones with manufacturing history, costs, or plans — can't delete it.");
     }
 
     const hasLegacyRecords = lot.products.some((p) => p._count.transactions > 0 || p._count.processLogs > 0);
@@ -227,4 +190,75 @@ export async function updateLotPurchaseCost(lotId: string, costRaw: string): Pro
   revalidatePath(`/lotting/${lotId}`);
   revalidatePath("/lotting");
   return {};
+}
+
+const allocateSchema = z.object({
+  currency: z.enum(["USD", "INR"]).nullable(),
+  fxRate: z
+    .string()
+    .trim()
+    .regex(/^(\d{1,4}(\.\d{1,4})?)?$/, "Exchange rate must be a number like 88.25.")
+    .transform((v) => (v === "" ? null : v)),
+});
+
+// Spreads this lot's rough cost over its stones by rough weight (or equally,
+// per Settings). A lot made from a purchase packet uses the packet's share
+// of the purchase; an older lot uses its purchase cost, in the currency
+// chosen here (it was never recorded before).
+export async function allocateLotCost(
+  lotId: string,
+  input: { currency: string | null; fxRate: string },
+): Promise<{ error?: string; info?: string }> {
+  const viewer = await requirePermission("lots.manage");
+  if (!can(viewer, "costs.view")) throw new ForbiddenError();
+  const parsed = parseInput(allocateSchema, input);
+  if (!parsed.ok) return { error: parsed.error };
+
+  try {
+    const count = await prisma.$transaction(async (tx) => {
+      const lot = await tx.lot.findUnique({ where: { id: lotId }, include: { packet: { include: { purchase: true } } } });
+      if (!lot) throw new AllocationError("Lot not found.");
+
+      if (lot.packet) {
+        if (lot.packet.costShare === null) {
+          throw new AllocationError("Allocate the purchase cost to its packets first (on the rough purchase page).");
+        }
+        return allocateLotRough(tx, viewer.id, lotId, {
+          cents: toCents(lot.packet.costShare),
+          currency: lot.packet.purchase.currency,
+          fxRate: lot.packet.purchase.fxRate?.toString() ?? null,
+          date: lot.packet.purchase.date,
+          sourceType: "ROUGH_PURCHASE",
+          sourceId: lot.packet.id,
+        });
+      }
+
+      if (lot.purchaseCost === null) throw new AllocationError("Enter the lot's purchase cost first.");
+      const currency = parsed.data.currency ?? lot.purchaseCurrency;
+      if (!currency) throw new AllocationError("Choose the currency the purchase cost is in.");
+      const fxRate = parsed.data.fxRate ?? lot.purchaseFxRate?.toString() ?? (await usdInrOn(tx, lot.createdAt));
+      const before = { purchaseCurrency: lot.purchaseCurrency, purchaseFxRate: lot.purchaseFxRate };
+      const after = await tx.lot.update({ where: { id: lotId }, data: { purchaseCurrency: currency, purchaseFxRate: fxRate } });
+      await writeAudit(tx, viewer.id, {
+        action: "UPDATE",
+        entity: "Lot",
+        entityId: lotId,
+        before,
+        after: { purchaseCurrency: after.purchaseCurrency, purchaseFxRate: after.purchaseFxRate },
+      });
+      return allocateLotRough(tx, viewer.id, lotId, {
+        cents: toCents(lot.purchaseCost),
+        currency,
+        fxRate,
+        date: lot.createdAt,
+        sourceType: "LOT_ALLOCATION",
+        sourceId: lotId,
+      });
+    }, TX_OPTIONS);
+    revalidatePath(`/lotting/${lotId}`);
+    return { info: `Rough cost allocated to ${count} stone${count === 1 ? "" : "s"}.` };
+  } catch (err) {
+    if (err instanceof AllocationError) return { error: err.message };
+    throw err;
+  }
 }

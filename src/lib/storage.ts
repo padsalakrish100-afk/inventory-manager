@@ -25,9 +25,21 @@ export type UploadInput = {
   uploadedById: string;
 };
 
-export function validateUpload(file: File, allow: "image" | "image-or-pdf"): string | null {
-  const allowed = allow === "image" ? IMAGE_TYPES : [...IMAGE_TYPES, ...DOCUMENT_TYPES];
-  if (!allowed.includes(file.type)) return `${file.name || "File"}: unsupported file type.`;
+// Files that must never be stored and served back (they could run in a
+// browser or on a PC). Everything else is allowed for "any" uploads such as
+// Sarine/Galaxy plan files, whose formats browsers don't recognise.
+const BLOCKED_EXTENSIONS = /\.(exe|bat|cmd|com|msi|scr|ps1|vbs|js|mjs|html?|svg|xhtml|php|sh|jar)$/i;
+const BLOCKED_TYPES = ["text/html", "image/svg+xml", "application/javascript", "text/javascript", "application/x-msdownload"];
+
+export function validateUpload(file: File, allow: "image" | "image-or-pdf" | "any"): string | null {
+  if (allow === "any") {
+    if (BLOCKED_EXTENSIONS.test(file.name) || BLOCKED_TYPES.includes(file.type)) {
+      return `${file.name || "File"}: this kind of file can't be uploaded.`;
+    }
+  } else {
+    const allowed = allow === "image" ? IMAGE_TYPES : [...IMAGE_TYPES, ...DOCUMENT_TYPES];
+    if (!allowed.includes(file.type)) return `${file.name || "File"}: unsupported file type.`;
+  }
   if (file.size === 0) return `${file.name || "File"} is empty.`;
   if (file.size > MAX_UPLOAD_BYTES) return `${file.name || "File"} is larger than 3 MB.`;
   return null;
@@ -48,7 +60,11 @@ export async function saveAttachment(tx: Tx, input: UploadInput) {
   let url = "db";
   let thumbUrl: string | null = null;
   if (blobStoreEnabled()) {
-    const main = await put(pathname, bytes, { access: "private", contentType: input.file.type, addRandomSuffix: true });
+    const main = await put(pathname, bytes, {
+      access: "private",
+      contentType: input.file.type || "application/octet-stream",
+      addRandomSuffix: true,
+    });
     url = main.url;
     if (thumbBytes) {
       const t = await put(`${pathname}.thumb.jpg`, thumbBytes, {
@@ -68,7 +84,7 @@ export async function saveAttachment(tx: Tx, input: UploadInput) {
       url,
       thumbUrl,
       fileName: input.file.name || null,
-      mime: input.file.type,
+      mime: input.file.type || "application/octet-stream",
       sizeBytes: bytes.length,
       uploadedById: input.uploadedById,
     },

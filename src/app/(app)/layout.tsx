@@ -6,10 +6,12 @@ import { can, getViewer, ROLE_LABELS, type Permission } from "@/lib/authz";
 
 const navItems: { href: string; label: string; permission: Permission }[] = [
   { href: "/stones", label: "Stones", permission: "stones.view" },
+  { href: "/rough", label: "Rough", permission: "lots.manage" },
   { href: "/lotting", label: "Lotting", permission: "lots.manage" },
   { href: "/manufacturing", label: "Manufacturing", permission: "mfg.view" },
   { href: "/karigars", label: "Karigars", permission: "karigars.manage" },
   { href: "/polish", label: "Polish", permission: "stock.view" },
+  { href: "/costing", label: "Costing", permission: "costs.view" },
   { href: "/settings", label: "Settings", permission: "admin" },
 ];
 

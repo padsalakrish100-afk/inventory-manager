@@ -6,6 +6,9 @@ import { readAttachmentBlob } from "@/lib/storage";
 const VIEW_PERMISSION: Record<string, Permission> = {
   BREAKAGE: "stones.view",
   KARIGAR_PHOTO: "karigars.manage",
+  ROUGH_INVOICE: "costs.view",
+  ROUGH_KP: "lots.manage",
+  STONE_PLAN: "stones.view",
 };
 
 // Serves an uploaded file after checking the viewer may see the record it
@@ -22,9 +25,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!can(viewer, permission)) return new Response("Forbidden", { status: 403 });
 
   const wantThumb = new URL(request.url).searchParams.get("thumb") === "1";
+  // Images and PDFs open in the browser; anything else (plan files etc.)
+  // downloads, and is never sniffed into something executable.
+  const viewable = attachment.mime.startsWith("image/") || attachment.mime === "application/pdf";
+  // Quotes and line breaks removed so a file name can't break the header.
+  const safeFileName = (attachment.fileName ?? "file").replace(/["\r\n]/g, "");
   const headers = {
     "Cache-Control": "private, max-age=3600",
-    "Content-Disposition": `inline; filename="${(attachment.fileName ?? "file").replace(/"/g, "")}"`,
+    "X-Content-Type-Options": "nosniff",
+    "Content-Disposition": `${viewable ? "inline" : "attachment"}; filename="${safeFileName}"`,
   };
 
   if (attachment.url === "db") {

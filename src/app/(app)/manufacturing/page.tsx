@@ -59,6 +59,9 @@ export default async function ManufacturingPage() {
           <Link href="/manufacturing/breakage" className={`${linkClass} text-center`}>
             Breakage
           </Link>
+          <Link href="/planning" className={`${linkClass} text-center`}>
+            Planning
+          </Link>
           {can(viewer, "mfg.reports") && (
             <Link href="/manufacturing/reports" className={`${linkClass} text-center`}>
               Reports
