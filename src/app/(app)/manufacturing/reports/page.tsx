@@ -7,19 +7,32 @@ import { ExportButtons } from "@/components/export-buttons";
 export default async function ManufacturingReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reworkedOnly?: string; sort?: string }>;
+  searchParams: Promise<{ reworkedOnly?: string; sort?: string; page?: string }>;
 }) {
   await requirePagePermission("mfg.reports");
-  const { reworkedOnly, sort } = await searchParams;
-  const [lots, stones, stages] = await Promise.all([
+  const { reworkedOnly, sort, page: pageParam } = await searchParams;
+  const page = Math.max(1, Math.min(10_000, Number.parseInt(pageParam ?? "1", 10) || 1));
+
+  // Stage repeats are counted in the database (one row per stone and stage
+  // it went through more than once), so this stays fast at 50,000+ stones.
+  const repeats = await prisma.$queryRaw<{ productId: string; stageId: string; c: bigint }[]>`
+    SELECT "productId", "stageId", COUNT(*) AS c FROM "ProcessMovement"
+    WHERE "voidedAt" IS NULL AND "stageId" IS NOT NULL
+    GROUP BY "productId", "stageId" HAVING COUNT(*) > 1`;
+  const reworkedIds = [...new Set(repeats.map((r) => r.productId))];
+  const stoneWhere = reworkedOnly === "1" ? { id: { in: reworkedIds } } : {};
+
+  const [lots, stones, totalStones, stages] = await Promise.all([
     prisma.lot.findMany({
       include: {
         sourceParty: true,
-        products: { include: { polishedStone: true } },
+        products: { select: { currentStageId: true, currentProcess: true, polishedStone: { select: { caratWeight: true } } } },
       },
       orderBy: { createdAt: "desc" },
+      take: 200,
     }),
     prisma.product.findMany({
+      where: stoneWhere,
       include: {
         lot: true,
         currentParty: true,
@@ -28,7 +41,10 @@ export default async function ManufacturingReportsPage({
         movements: { where: { voidedAt: null }, select: { stageId: true } },
       },
       orderBy: { sku: "asc" },
+      skip: (page - 1) * STONES_PER_PAGE,
+      take: STONES_PER_PAGE,
     }),
+    prisma.product.count(),
     getStages(),
   ]);
   const stageName = (id: string) => stages.find((st) => st.id === id)?.name ?? "Unknown stage";
@@ -44,20 +60,26 @@ export default async function ManufacturingReportsPage({
     return { stone: s, counts, totalMoves, reworked };
   });
 
-  const reworkedCount = stoneRows.filter((r) => r.reworked).length;
+  const reworkedCount = reworkedIds.length;
+  const shownTotal = reworkedOnly === "1" ? reworkedCount : totalStones;
+  const pages = Math.max(1, Math.ceil(shownTotal / STONES_PER_PAGE));
+  const pageHref = (n: number) => {
+    const p = new URLSearchParams();
+    if (reworkedOnly) p.set("reworkedOnly", reworkedOnly);
+    if (sort) p.set("sort", sort);
+    if (n > 1) p.set("page", String(n));
+    return `/manufacturing/reports${p.size ? `?${p}` : ""}`;
+  };
 
   // Total "extra" (repeat) instances per stage across every stone — e.g.
   // a stone sent through Chabka 3 times contributes 2 repeats to Chabka.
   const repeatsByProcess = new Map<string, { repeats: number; stonesAffected: number }>();
   for (const st of stages.filter((x) => x.active)) repeatsByProcess.set(st.id, { repeats: 0, stonesAffected: 0 });
-  for (const { counts } of stoneRows) {
-    for (const [process, count] of counts.entries()) {
-      if (count <= 1) continue;
-      const entry = repeatsByProcess.get(process) ?? { repeats: 0, stonesAffected: 0 };
-      repeatsByProcess.set(process, entry);
-      entry.repeats += count - 1;
-      entry.stonesAffected += 1;
-    }
+  for (const r of repeats) {
+    const entry = repeatsByProcess.get(r.stageId) ?? { repeats: 0, stonesAffected: 0 };
+    repeatsByProcess.set(r.stageId, entry);
+    entry.repeats += Number(r.c) - 1;
+    entry.stonesAffected += 1;
   }
   const repeatRows = [...repeatsByProcess.entries()].sort(([, a], [, b]) =>
     sort === "repeatsAsc" ? a.repeats - b.repeats : b.repeats - a.repeats,
@@ -66,7 +88,7 @@ export default async function ManufacturingReportsPage({
   if (reworkedOnly) repeatSortParams.set("reworkedOnly", reworkedOnly);
   repeatSortParams.set("sort", sort === "repeatsDesc" ? "repeatsAsc" : "repeatsDesc");
 
-  const visibleStoneRows = reworkedOnly === "1" ? stoneRows.filter((r) => r.reworked) : stoneRows;
+  const visibleStoneRows = stoneRows;
   const toggleReworkedParams = new URLSearchParams();
   if (sort) toggleReworkedParams.set("sort", sort);
   if (reworkedOnly !== "1") toggleReworkedParams.set("reworkedOnly", "1");
@@ -85,7 +107,7 @@ export default async function ManufacturingReportsPage({
       </div>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold text-zinc-900">By lot</h2>
+        <h2 className="text-lg font-semibold text-zinc-900">By lot <span className="text-sm font-normal text-zinc-500">(latest 200)</span></h2>
         <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
@@ -233,7 +255,7 @@ export default async function ManufacturingReportsPage({
           >
             {reworkedOnly === "1"
               ? "Showing reworked only — show all"
-              : `${reworkedCount} of ${stoneRows.length} reworked — show reworked only`}
+              : `${reworkedCount} of ${totalStones} reworked — show reworked only`}
           </Link>
         </div>
         <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
@@ -301,7 +323,30 @@ export default async function ManufacturingReportsPage({
             </tbody>
           </table>
         </div>
+        {pages > 1 && (
+          <nav className="flex items-center justify-between text-sm">
+            {page > 1 ? (
+              <Link href={pageHref(page - 1)} className="min-h-11 rounded-md border border-zinc-300 px-4 py-2.5 hover:bg-zinc-50">
+                &larr; Previous
+              </Link>
+            ) : (
+              <span />
+            )}
+            <span className="text-zinc-500">
+              Page {page} of {pages}
+            </span>
+            {page < pages ? (
+              <Link href={pageHref(page + 1)} className="min-h-11 rounded-md border border-zinc-300 px-4 py-2.5 hover:bg-zinc-50">
+                Next &rarr;
+              </Link>
+            ) : (
+              <span />
+            )}
+          </nav>
+        )}
       </section>
     </div>
   );
 }
+
+const STONES_PER_PAGE = 200;

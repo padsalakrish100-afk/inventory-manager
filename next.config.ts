@@ -1,5 +1,17 @@
 import type { NextConfig } from "next";
 
+// Sent with every page and API response.
+const SECURITY_HEADERS = [
+  // The app is never shown inside another site's frame (clickjacking).
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // Camera for the stone scanner; nothing else.
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=()" },
+  { key: "Strict-Transport-Security", value: "max-age=63072000" },
+];
+
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
@@ -8,6 +20,9 @@ const nextConfig: NextConfig = {
       // request limit.
       bodySizeLimit: "4mb",
     },
+  },
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },
 };
 

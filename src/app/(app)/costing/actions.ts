@@ -1,5 +1,6 @@
 "use server";
 
+import { periodLockMessage } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -46,6 +47,8 @@ export async function addCostEntry(stoneId: string, _prev: string | undefined, f
   if (stone.status === "SPLIT") return "This stone was split — add costs to its children instead.";
 
   const date = dateInputToInstant(d.date);
+  const locked = await periodLockMessage(prisma, [date]);
+  if (locked) return locked;
   await prisma.$transaction(async (tx) => {
     const fxRate = d.fxRate ?? (await usdInrOn(tx, date));
     await createCostEntries(tx, viewer.id, [
@@ -81,6 +84,8 @@ export async function voidCostEntry(entryId: string): Promise<{ error?: string }
   if (!["MANUAL", "LEGACY_POLISH"].includes(entry.sourceType)) {
     return { error: "This cost comes from a purchase, bill, overhead, or split — change it there." };
   }
+  const lockedEntry = await periodLockMessage(prisma, [entry.date]);
+  if (lockedEntry) return { error: lockedEntry };
   await prisma.$transaction(async (tx) => {
     const after = await tx.costEntry.update({ where: { id: entryId }, data: { voidedAt: new Date() } });
     await writeAudit(tx, viewer.id, { action: "VOID", entity: "CostEntry", entityId: entryId, before: entry, after });
@@ -113,6 +118,8 @@ export async function createOverheadPool(_prev: string | undefined, formData: Fo
   const d = parsed.data;
   if (Number(d.amount) <= 0) return "Amount must be more than zero.";
   const month = new Date(`${d.month}-01T00:00:00Z`);
+  const locked = await periodLockMessage(prisma, [month]);
+  if (locked) return locked;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -140,6 +147,9 @@ export async function reallocateOverhead(poolId: string): Promise<{ error?: stri
   const viewer = await requirePermission("costs.view");
   const parsed = parseInput(zId, poolId);
   if (!parsed.ok) return { error: parsed.error };
+  const pool = await prisma.overheadPool.findUnique({ where: { id: poolId }, select: { month: true } });
+  const locked = await periodLockMessage(prisma, [pool?.month]);
+  if (locked) return { error: locked };
   try {
     const count = await prisma.$transaction(async (tx) => {
       const n = await allocateOverhead(tx, viewer.id, poolId);
@@ -156,6 +166,9 @@ export async function reallocateOverhead(poolId: string): Promise<{ error?: stri
 
 export async function voidOverheadPool(poolId: string): Promise<{ error?: string }> {
   const viewer = await requirePermission("admin");
+  const pool = await prisma.overheadPool.findUnique({ where: { id: poolId }, select: { month: true } });
+  const locked = await periodLockMessage(prisma, [pool?.month]);
+  if (locked) return { error: locked };
   await prisma.$transaction(async (tx) => {
     const before = await tx.overheadPool.findUniqueOrThrow({ where: { id: poolId } });
     const after = await tx.overheadPool.update({ where: { id: poolId }, data: { voidedAt: new Date() } });

@@ -11,6 +11,8 @@ const LINKS = [
   { href: "/settings/attributes", title: "Cut details", description: "Extra grading fields per cut style (Old Mine, Rose…)." },
   { href: "/settings/company", title: "Company & documents", description: "Name, address, bank details and terms on memos and invoices." },
   { href: "/settings/fx", title: "Exchange rates", description: "Daily USD/INR rate stored on every money entry." },
+  { href: "/settings/period-locks", title: "Period locks", description: "Close a month or day so its entries can't be changed." },
+  { href: "/settings/data-export", title: "Export all data", description: "Download every table as CSV in one zip file." },
   { href: "/users", title: "Users", description: "Logins, roles, cost visibility, departments." },
   { href: "/admin/audit", title: "Audit log", description: "Every change: who, when, old → new." },
 ];

@@ -1,5 +1,6 @@
 "use server";
 
+import { assertPeriodsOpen, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -17,7 +18,7 @@ import { parseDocLines } from "@/lib/sales/lines";
 import { caratsOf, refreshMemoStatus } from "@/lib/sales/stones";
 import { canTransition, STONE_STATUS_LABELS } from "@/lib/stone/status";
 
-class UserError extends Error {}
+class UserError extends UserFacingError {}
 
 const memoSchema = z.object({
   party: zRequiredText("Customer", 200),
@@ -55,6 +56,7 @@ export async function createSalesMemo(_prev: string | undefined, formData: FormD
   let memoId: string;
   try {
     memoId = await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [date]);
       const fxRate = d.fxRate ?? (await usdInrOn(tx, date));
       if (!fxRate) throw new UserError("Enter the exchange rate (no rate on file for this date).");
       const party = await ensurePartyWithRole(tx, viewer.id, d.party, "CUSTOMER");
@@ -121,7 +123,7 @@ export async function createSalesMemo(_prev: string | undefined, formData: FormD
       return memo.id;
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserFacingError) return err.message;
     throw err;
   }
 
@@ -154,6 +156,7 @@ export async function returnMemoLines(input: { memoId: string; lineIds: string[]
       if (!memo || memo.voidedAt) throw new UserError("Memo not found.");
       if (memo.lines.length !== lineIds.length) throw new UserError("Some of those lines aren't on this memo.");
       if (at < memo.date) throw new UserError("The return date can't be before the memo date.");
+      await assertPeriodsOpen(tx, [at]);
       const audits: AuditEntry[] = [];
       const events: StoneEventInput[] = [];
       for (const line of memo.lines) {
@@ -181,7 +184,7 @@ export async function returnMemoLines(input: { memoId: string; lineIds: string[]
       await recordStoneEvents(tx, events);
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
   revalidatePath(`/sales/memos/${memoId}`);

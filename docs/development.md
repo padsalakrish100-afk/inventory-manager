@@ -121,3 +121,11 @@ requests.
 - **Dashboard (`/`):** cards for this month's sales and profit, receivables, stock value (at asking, and at cost for cost viewers), memos, pending work, excess-loss alerts and stones by stage. Each card appears only for roles allowed to see it. Operators still land on the scanner.
 - **Report engine (`src/lib/reports`):** each report is defined once (filters, columns, totals) and drives both its page (`/reports/<key>`) and its exports (`/api/export/<key>?format=xlsx|pdf`). Columns marked `costOnly` are removed for anyone without cost visibility, in the page and in both exports. To add a report, write a `ReportDef` and register it in `src/lib/reports/index.ts`.
 - **RapNet CSV:** `/api/export/rapnet`, also linked from the stock list report. It includes stones in stock or on memo that have an asking price, priced in USD per carat. Antique cuts are mapped to RapNet shape names ("Old Miner", "European Cut", "Rose"); check them on your first upload, since RapNet's upload screen lets you re-map values. City/State/Country are set to Surat, Gujarat, India.
+
+## Hardening (Phase 8)
+
+- **Period locks** (`src/lib/period-lock.ts`): any action that creates, changes or voids something dated must check `assertPeriodsOpen` (inside a transaction; each actions file's `UserError` extends `UserFacingError`, so the message reaches the user) or `periodLockMessage` (before the transaction). Locks apply to admins too: unlock first in Settings → Period locks.
+- **Data export:** `/api/admin/export` (admin only) streams a zip with one CSV per table, read straight from the database catalog, so new tables are included automatically. It leaves out `User.passwordHash` and the bytes in `AttachmentData`.
+- **Security headers** are set in `next.config.ts`: no framing, nosniff, a referrer policy, camera allowed for the scanner only, and HSTS.
+- **Large lists:** every list page is paginated or capped, and reports show the first 1,000 rows on screen (exports include all rows). The old full-table Polish summary pages now redirect to Reports.
+- **Backups:** see [backup-restore.md](backup-restore.md).

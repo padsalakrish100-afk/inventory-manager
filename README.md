@@ -1,131 +1,81 @@
-# Inventory Manager
+# Inventory Manager — Opulent Diam ERP
 
-A small internal web app for tracking stock levels and inward/outward
-transactions, with login-based accounts for multiple staff.
+Rough-to-sale manufacturing ERP for Opulent Diam (natural diamonds, antique and
+specialty cuts; factory in Surat, company in the US). It tracks every stone from
+rough purchase to final payment: lotting and planning, issue/return through the
+factory with loss control, karigar labour and payroll, a per-stone cost ledger,
+polished stock with grading and certificates, memos, invoices, payments,
+receivables/payables, dashboards and reports.
 
-Stack: Next.js (App Router) + TypeScript, Prisma, NextAuth (credentials
-login), Tailwind CSS. Runs on SQLite locally; see **Deploying online**
-below for switching to Postgres.
+- **For people using the app:** [docs/user-guide.md](docs/user-guide.md)
+- **Backups and restore:** [docs/backup-restore.md](docs/backup-restore.md)
+- **Developing and shipping changes:** [docs/development.md](docs/development.md)
+- **Design notes / data model:** [docs/erp-plan.md](docs/erp-plan.md)
 
-## Features
+## Stack
 
-- Login with email/password (admin and staff roles)
-- Products: SKU, name, unit, current stock, reorder level, location
-  (e.g. Surat/Mumbai), GIA certification, carat/color/clarity/cut, and
-  cost/selling price per unit
-- Transactions: record stock in (purchases/returns) or stock out
-  (sales/usage) against a product; stock is updated automatically and
-  outward transactions can't exceed available stock
-- Contacts: a reusable directory of suppliers/customers, linked to
-  each transaction's party (typing a new name on a transaction saves
-  it to the directory automatically)
-- Lots: track a rough-to-polish manufacturing batch — every expense
-  charged against it (rough purchase, sawing, cutting, polishing,
-  certification, other), its current stage, and which product SKUs it
-  produced, so you can see total cost in vs. current stock value out
-- Dashboard: total products, total units in stock, low-stock alerts,
-  stock value at cost/selling price, potential margin, recent activity
-- Reports: Sales, Purchases, Stock summary, Lot costing, and Party
-  ledger — each filterable (date range, product, party) and
-  exportable to CSV; the party ledger drills into a party's full
-  transaction history
-- CSV export for products, transactions, lot expenses, and every
-  report (the transactions export respects the current type/product/
-  party filter)
-- CSV import for products (Products → Import CSV): upload your whole
-  stock list at once — new SKUs are created, existing SKUs are
-  updated, bad rows are skipped with a reason instead of failing the
-  whole file. Uses the same columns as the product export, so you can
-  export your current stock as a starting template, edit it, and
-  upload it back
-- Users page (admin only): create/remove staff logins
-- Settings page (admin only): change the app name, the location
-  quick-picks, and the accent color without touching code — takes
-  effect immediately, everywhere, including the sign-in page
+Next.js 16 (App Router, server actions) · TypeScript · Tailwind CSS 4 ·
+Prisma 7 with `@prisma/adapter-pg` · Postgres on Neon · NextAuth v5
+(username/password) · Vercel (deploys from GitHub) · optional Vercel Blob for
+files · exceljs and @react-pdf for exports.
 
-## Local development
+## Modules
+
+| Area | What it does |
+| --- | --- |
+| Rough | Purchases with invoice and Kimberley Process files, assortment into packets, packet → lot |
+| Lotting & planning | Lots and numbered stones, per-stone plans (Sarine/Galaxy files), planned vs actual |
+| Manufacturing | Configurable stages, issue/return to karigars or departments, automatic loss, loss limits and excess-loss review, breakage, splits, pending report, QR labels and phone scanner, full stone timeline |
+| Karigars | Profiles, rate cards with history, automatic labour, adjustments, payroll (paid/reversed), performance, outside job-work and bills |
+| Costing | Cost ledger per stone (rough share, labour, job-work, certification, overhead, other) in USD and INR, allocation by weight, inventory value |
+| Polished stock | Grading, antique-cut attributes, certificates (GIA/IGI/HRD) with verify links, photos/videos, location and status flow, Rapaport CSV and discount |
+| Sales & finance | Memos (consignment), invoices with export fields and PDFs, receipts and payments, receivables/payables with ageing |
+| Reports | Dashboard; stock list, aging, loss, yield, sales, profit, memo, receivables, payables, karigar performance, payroll — all filterable, Excel/PDF; RapNet CSV |
+| System | Roles and cost hiding, audit log, period locking, full data export (zip of CSVs) |
+
+## Roles
+
+| Role | Can |
+| --- | --- |
+| Owner / Admin | Everything, including costs, profit, settings, users, voids, period locks |
+| Manager | Operations, stock, memos, invoices, receipts; costs/profit only if "can see costs" is ticked on their user |
+| Department operator | Issue/return in their own departments (scanner-first) |
+| Viewer / Sales | Stock and memos; no costs |
+
+Cost, profit and rough price are removed on the server — from pages, exports
+and file downloads — for anyone who can't see costs.
+
+## Running locally
+
+Never point local development at production (`.env` holds the production
+`DATABASE_URL`). Use the local database described in
+[docs/development.md](docs/development.md):
 
 ```bash
 npm install
-npm run db:seed   # creates the first admin login
+npx prisma dev --name opulent-erp --detach   # local Postgres
+# put the local URL in .env.local (see docs/development.md)
+npx prisma migrate deploy
+npm run db:seed        # first admin login (admin / admin123 — change it)
+npm run db:seed:demo   # optional demo data and demo logins (local only)
 npm run dev
 ```
 
-Open http://localhost:3000 — you'll be redirected to `/login`.
+## Environment variables
 
-Seeded admin login:
+| Variable | Needed | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | yes | Postgres connection string (Neon in production) |
+| `AUTH_SECRET` | yes | NextAuth session secret (random 32 bytes) |
+| `BLOB_READ_WRITE_TOKEN` | recommended | Private Vercel Blob store for photos, videos, certificates; without it files are kept in the database (3 MB limit) |
+| `APP_URL` | optional | Base URL printed in stone QR codes (defaults to the current site) |
+| `GIA_REPORT_API_KEY` / `GIA_REPORT_API_URL` | optional | Enables "Check with GIA"; hidden when unset |
+| `SEED_ADMIN_USERNAME` / `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | optional | Credentials for `npm run db:seed` |
 
-- Email: `admin@example.com`
-- Password: `admin123`
+## Shipping changes
 
-**Change this immediately**: log in, go to Users, create your own
-admin account, then remove the seeded one. Or re-seed with your own
-credentials:
-
-```bash
-SEED_ADMIN_EMAIL=you@company.com SEED_ADMIN_PASSWORD=your-password npm run db:seed
-```
-
-Data is stored in `dev.db` (SQLite) at the project root, ignored by git.
-
-### Adding/changing data models
-
-Edit `prisma/schema.prisma`, then run:
-
-```bash
-npx prisma migrate dev --name <describe-the-change>
-```
-
-## Deploying online
-
-SQLite won't work on serverless hosts like Vercel (no persistent
-filesystem), so deploying means switching to a real Postgres database.
-This is a one-time setup:
-
-1. **Get a Postgres database.** Any provider works; two free options
-   that pair well with Vercel are [Neon](https://neon.tech) and
-   [Supabase](https://supabase.com). Create a project and copy its
-   connection string (`postgresql://...`).
-
-2. **Switch the Prisma datasource** in `prisma/schema.prisma`:
-
-   ```prisma
-   datasource db {
-     provider = "postgresql"
-   }
-   ```
-
-3. **Swap the driver adapter.** Install the Postgres adapter:
-
-   ```bash
-   npm install @prisma/adapter-pg@7.10.0
-   npm uninstall @prisma/adapter-better-sqlite3
-   ```
-
-   In `src/lib/prisma.ts` and `prisma/seed.ts`, replace the
-   `PrismaBetterSqlite3` adapter with:
-
-   ```ts
-   import { PrismaPg } from "@prisma/adapter-pg";
-   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-   ```
-
-4. **Set environment variables** (in Vercel's project settings, or
-   wherever you host):
-   - `DATABASE_URL` — your Postgres connection string
-   - `AUTH_SECRET` — a new random value: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
-
-5. **Run the migrations against the new database** (locally, pointed
-   at the production `DATABASE_URL`, or via your host's build step):
-
-   ```bash
-   npx prisma migrate deploy
-   npm run db:seed
-   ```
-
-6. **Deploy.** Push this repo to GitHub and import it in Vercel
-   (or run `vercel` from the CLI), setting the two env vars above.
-   Vercel auto-detects Next.js — no extra build config needed.
-
-After that, share the app's URL with your team and create their
-logins from the Users page.
+Every schema change is an additive Prisma migration (nothing that holds data is
+dropped or renamed). Before merging a release: branch the Neon database,
+`prisma migrate deploy` against production, then merge — Vercel builds and
+deploys `main`. The full checklist is in
+[docs/development.md](docs/development.md#shipping-a-phase-to-production).

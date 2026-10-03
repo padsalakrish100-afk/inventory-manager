@@ -1,5 +1,6 @@
 "use server";
 
+import { assertPeriodsOpen, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -27,7 +28,7 @@ import { caratsOf, describeStone, refreshMemoStatus } from "@/lib/sales/stones";
 import { stoneCosts } from "@/lib/costing/ledger";
 import { canTransition, STONE_STATUS_LABELS } from "@/lib/stone/status";
 
-class UserError extends Error {}
+class UserError extends UserFacingError {}
 
 const zPct = z.union([
   z.literal("").transform(() => null),
@@ -87,6 +88,7 @@ export async function createInvoice(_prev: string | undefined, formData: FormDat
   let invoiceId: string;
   try {
     invoiceId = await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [date]);
       const fxRate = d.fxRate ?? (await usdInrOn(tx, date));
       if (!fxRate) throw new UserError("Enter the exchange rate (no rate on file for this date).");
       const party = await ensurePartyWithRole(tx, viewer.id, d.party, "CUSTOMER");
@@ -205,7 +207,7 @@ export async function createInvoice(_prev: string | undefined, formData: FormDat
       return invoice.id;
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserFacingError) return err.message;
     throw err;
   }
 
@@ -239,7 +241,7 @@ export async function updateInvoiceDetails(
       await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "Invoice", entityId: invoiceId, before, after });
     });
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserFacingError) return err.message;
     throw err;
   }
   revalidatePath(`/sales/invoices/${invoiceId}`);
@@ -266,6 +268,7 @@ export async function voidInvoice(invoiceId: string, reason: string): Promise<{ 
       });
       if (!inv || inv.voidedAt) throw new UserError("Invoice not found.");
       if (inv.allocations.length > 0) throw new UserError("Payments are recorded against this invoice — void those first.");
+      await assertPeriodsOpen(tx, [inv.date]);
 
       const after = await tx.invoice.update({ where: { id: inv.id }, data: { voidedAt: new Date(), voidReason: parsed.data.reason } });
       const { lines: _l, allocations: _a, ...before } = inv;
@@ -304,7 +307,7 @@ export async function voidInvoice(invoiceId: string, reason: string): Promise<{ 
       await recordStoneEvents(tx, events);
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
   revalidatePath("/sales", "layout");

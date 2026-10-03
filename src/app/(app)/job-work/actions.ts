@@ -1,5 +1,6 @@
 "use server";
 
+import { assertPeriodsOpen, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -51,6 +52,7 @@ export async function createJobWorkBill(_prev: string | undefined, formData: For
   const date = dateInputToInstant(d.date);
   try {
     await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [date]);
       const movements = await tx.processMovement.findMany({
         where: { id: { in: d.movementIds } },
         select: { id: true, partyId: true, returnDate: true, voidedAt: true, jobWorkBillId: true },
@@ -84,7 +86,7 @@ export async function createJobWorkBill(_prev: string | undefined, formData: For
       });
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError || err instanceof AllocationError) return err.message;
+    if (err instanceof UserFacingError || err instanceof AllocationError) return err.message;
     throw err;
   }
 
@@ -99,17 +101,18 @@ export async function voidJobWorkBill(billId: string): Promise<{ error?: string 
     await prisma.$transaction(async (tx) => {
       const before = await tx.jobWorkBill.findUnique({ where: { id: billId } });
       if (!before || before.voidedAt) throw new UserError("Bill not found.");
+      await assertPeriodsOpen(tx, [before.date]);
       const after = await tx.jobWorkBill.update({ where: { id: billId }, data: { voidedAt: new Date() } });
       await allocateJobWorkBill(tx, viewer.id, billId); // voids the bill's cost entries
       await tx.processMovement.updateMany({ where: { jobWorkBillId: billId }, data: { jobWorkBillId: null } });
       await writeAudit(tx, viewer.id, { action: "VOID", entity: "JobWorkBill", entityId: billId, before, after });
     });
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
   revalidatePath("/job-work");
   return {};
 }
 
-class UserError extends Error {}
+class UserError extends UserFacingError {}

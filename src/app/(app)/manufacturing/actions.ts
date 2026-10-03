@@ -1,5 +1,6 @@
 "use server";
 
+import { assertPeriodsOpen, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -112,6 +113,7 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
 
   try {
     const memoId = await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [date]);
       if (d.toDepartmentId && d.target === "DEPARTMENT") {
         const dept = await tx.department.findUnique({ where: { id: d.toDepartmentId } });
         if (!dept || !dept.active) throw new UserError("Choose an active department.");
@@ -241,7 +243,7 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
     revalidateManufacturing();
     return { memoId };
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
@@ -311,6 +313,7 @@ export async function returnStones(input: ReturnInput): Promise<ReturnResult> {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [date]);
       const products = await tx.product.findMany({ where: { sku: { in: skus } } });
       const bySku = new Map(products.map((p) => [p.sku, p]));
 
@@ -430,7 +433,7 @@ export async function returnStones(input: ReturnInput): Promise<ReturnResult> {
     revalidatePath("/manufacturing/alerts");
     return { returned: result.ids.length, excess: result.excessCount };
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
@@ -489,6 +492,7 @@ export async function transferToPolish(
   let polishedId: string;
   try {
     polishedId = await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [new Date()]);
       const product = await tx.product.findUnique({ where: { id: productId }, include: { polishedStone: true } });
       if (!product) throw new UserError("Stone not found.");
       if (product.polishedStone) throw new UserError("This stone has already been transferred to Polish.");
@@ -525,7 +529,7 @@ export async function transferToPolish(
       return polished.id;
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserFacingError) return err.message;
     throw err;
   }
 
@@ -552,6 +556,7 @@ export async function voidMovement(movementId: string, reason: string): Promise<
     const productId = await prisma.$transaction(async (tx) => {
       const movement = await tx.processMovement.findUnique({ where: { id: movementId } });
       if (!movement || movement.voidedAt) throw new UserError("Entry not found or already undone.");
+      await assertPeriodsOpen(tx, [movement.issueDate, movement.returnDate]);
 
       const latest = await tx.processMovement.findFirst({
         where: { productId: movement.productId, voidedAt: null },
@@ -620,7 +625,7 @@ export async function voidMovement(movementId: string, reason: string): Promise<
     revalidatePath("/manufacturing/alerts");
     return {};
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
@@ -660,7 +665,7 @@ export async function reviewExcessLoss(movementId: string, note: string): Promis
       ]);
     });
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 
@@ -722,4 +727,4 @@ export async function deleteStone(productId: string) {
 
 // A validation failure found inside a transaction — rolled back and shown
 // to the user as a form error rather than a crash.
-class UserError extends Error {}
+class UserError extends UserFacingError {}

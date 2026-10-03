@@ -1,5 +1,6 @@
 "use server";
 
+import { periodLockMessage } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -213,6 +214,9 @@ export async function allocateLotCost(
   if (!can(viewer, "costs.view")) throw new ForbiddenError();
   const parsed = parseInput(allocateSchema, input);
   if (!parsed.ok) return { error: parsed.error };
+  const lotDates = await prisma.lot.findUnique({ where: { id: lotId }, select: { createdAt: true, packet: { select: { purchase: { select: { date: true } } } } } });
+  const locked = await periodLockMessage(prisma, [lotDates?.packet?.purchase.date ?? lotDates?.createdAt]);
+  if (locked) return { error: locked };
 
   try {
     const count = await prisma.$transaction(async (tx) => {

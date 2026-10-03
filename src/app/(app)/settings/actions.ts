@@ -436,3 +436,58 @@ export async function updateCompanySettings(_prev: string | undefined, formData:
   revalidatePath("/settings/company");
   return "Saved.";
 }
+
+// ─── Period locks ───────────────────────────────────────────────────────────
+
+const lockSchema = z.object({
+  periodType: z.enum(["DAY", "MONTH"], { message: "Choose day or month." }),
+  period: z.string().trim(),
+  note: zOptionalText(300),
+});
+
+// Closes a day or month: nothing dated in it can be added, changed or
+// voided until an admin unlocks it.
+export async function lockPeriod(_prev: string | undefined, formData: FormData): Promise<string | undefined> {
+  const viewer = await requirePermission("admin");
+  const parsed = parseInput(lockSchema, {
+    periodType: String(formData.get("periodType") ?? ""),
+    period: String(formData.get("period") ?? ""),
+    note: String(formData.get("note") ?? ""),
+  });
+  if (!parsed.ok) return parsed.error;
+  const { periodType, period, note } = parsed.data;
+  const ok = periodType === "MONTH" ? /^\d{4}-\d{2}$/.test(period) : /^\d{4}-\d{2}-\d{2}$/.test(period);
+  if (!ok) return periodType === "MONTH" ? "Choose the month." : "Choose the day.";
+  const periodStart = new Date(`${periodType === "MONTH" ? `${period}-01` : period}T00:00:00Z`);
+  if (Number.isNaN(periodStart.getTime())) return "That date isn't valid.";
+
+  const existing = await prisma.periodLock.findUnique({ where: { periodType_periodStart: { periodType, periodStart } } });
+  if (existing && !existing.unlockedAt) return "That period is already locked.";
+  await prisma.$transaction(async (tx) => {
+    const after = existing
+      ? await tx.periodLock.update({
+          where: { id: existing.id },
+          data: { lockedAt: new Date(), lockedById: viewer.id, note, unlockedAt: null, unlockedById: null, unlockReason: null },
+        })
+      : await tx.periodLock.create({ data: { periodType, periodStart, lockedById: viewer.id, note } });
+    await writeAudit(tx, viewer.id, { action: existing ? "UPDATE" : "CREATE", entity: "PeriodLock", entityId: after.id, before: existing, after });
+  });
+  revalidatePath("/settings/period-locks");
+}
+
+export async function unlockPeriod(lockId: string, reason: string): Promise<{ error?: string }> {
+  const viewer = await requirePermission("admin");
+  const parsed = parseInput(z.object({ lockId: z.string().min(1).max(64), reason: z.string().trim().min(3, "Give a reason.").max(300) }), { lockId, reason });
+  if (!parsed.ok) return { error: parsed.error };
+  const before = await prisma.periodLock.findUnique({ where: { id: lockId } });
+  if (!before || before.unlockedAt) return { error: "That period isn't locked." };
+  await prisma.$transaction(async (tx) => {
+    const after = await tx.periodLock.update({
+      where: { id: lockId },
+      data: { unlockedAt: new Date(), unlockedById: viewer.id, unlockReason: parsed.data.reason },
+    });
+    await writeAudit(tx, viewer.id, { action: "UNLOCK", entity: "PeriodLock", entityId: lockId, before, after });
+  });
+  revalidatePath("/settings/period-locks");
+  return {};
+}

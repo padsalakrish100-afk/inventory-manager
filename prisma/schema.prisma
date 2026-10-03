@@ -388,6 +388,7 @@ model PolishedStone {
   minPrice      Decimal?  @db.Decimal(14, 2)
 
   @@index([buyerId])
+  @@index([createdAt])
   @@index([status])
   @@index([shape])
   @@index([cutStyle])
@@ -484,6 +485,8 @@ model Lot {
 
   products Product[]
   expenses LotExpense[]
+
+  @@index([createdAt])
 }
 
 model LotExpense {
@@ -1346,4 +1349,25 @@ model PaymentAllocation {
   @@index([invoiceId])
   @@index([roughPurchaseId])
   @@index([jobWorkBillId])
+}
+
+// ─── ERP hardening ──────────────────────────────────────────────────────────
+
+// A closed day or month. While locked, nothing dated in it can be added,
+// changed or voided; an admin unlocks it (with a reason) to make a fix.
+// Re-locking reuses the row; the audit log keeps the full history.
+model PeriodLock {
+  id           String    @id @default(cuid())
+  // DAY | MONTH
+  periodType   String
+  // The day, or the first day of the month.
+  periodStart  DateTime  @db.Date
+  lockedAt     DateTime  @default(now())
+  lockedById   String
+  note         String?
+  unlockedAt   DateTime?
+  unlockedById String?
+  unlockReason String?
+
+  @@unique([periodType, periodStart])
 }

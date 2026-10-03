@@ -1,5 +1,6 @@
 "use server";
 
+import { periodLockMessage, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -89,6 +90,8 @@ export async function createRoughPurchase(_prev: string | undefined, formData: F
   }
 
   const date = dateInputToInstant(d.date);
+  const locked = await periodLockMessage(prisma, [date]);
+  if (locked) return locked;
   const id = await prisma.$transaction(async (tx) => {
     const party = await ensurePartyWithRole(tx, viewer.id, d.party, "VENDOR");
     const year = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric" }).format(date);
@@ -222,6 +225,9 @@ export async function deletePacket(packetId: string): Promise<{ error?: string }
 export async function allocatePurchaseCost(purchaseId: string): Promise<{ error?: string; info?: string }> {
   const viewer = await requirePermission("lots.manage");
   if (!can(viewer, "costs.view")) throw new ForbiddenError();
+  const purchaseDate = await prisma.roughPurchase.findUnique({ where: { id: purchaseId }, select: { date: true } });
+  const lockedPurchase = await periodLockMessage(prisma, [purchaseDate?.date]);
+  if (lockedPurchase) return { error: lockedPurchase };
 
   try {
     const info = await prisma.$transaction(async (tx) => {
@@ -317,7 +323,7 @@ export async function lotPacket(_prev: string | undefined, formData: FormData): 
       return lot.id;
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserFacingError) return err.message;
     throw err;
   }
 
@@ -336,6 +342,8 @@ export async function voidRoughPurchase(purchaseId: string): Promise<{ error?: s
   });
   if (!purchase || purchase.voidedAt) return { error: "Purchase not found." };
   if (purchase.packets.some((p) => p.lot)) return { error: "Some packets are already in production — can't cancel." };
+  const lockedVoid = await periodLockMessage(prisma, [purchase.date]);
+  if (lockedVoid) return { error: lockedVoid };
   await prisma.$transaction(async (tx) => {
     const after = await tx.roughPurchase.update({ where: { id: purchaseId }, data: { voidedAt: new Date() } });
     const { packets: _p, ...before } = purchase;
@@ -346,4 +354,4 @@ export async function voidRoughPurchase(purchaseId: string): Promise<{ error?: s
   return {};
 }
 
-class UserError extends Error {}
+class UserError extends UserFacingError {}

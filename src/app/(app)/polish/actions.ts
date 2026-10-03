@@ -1,5 +1,6 @@
 "use server";
 
+import { assertPeriodsOpen, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -267,7 +268,7 @@ export async function updateSaleInfo(
       }
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserFacingError) return err.message;
     throw err;
   }
 
@@ -389,7 +390,7 @@ export async function sendToLab(polishedId: string, lab: string, note: string): 
     revalidatePath("/polish");
     return {};
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
@@ -407,6 +408,7 @@ export async function markInStock(
   );
   if (!parsed.ok) return { error: parsed.error };
   try {
+    if (parsed.data.fee && Number(parsed.data.fee) > 0) await assertPeriodsOpen(prisma, [new Date()]);
     const { stoneId } = await changeStoneStatus(viewer.id, polishedId, "IN_STOCK", {
       location: "OFFICE_SAFE",
       locationPartyId: null,
@@ -442,7 +444,7 @@ export async function markInStock(
     revalidatePath("/polish");
     return {};
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
@@ -479,4 +481,4 @@ export async function checkWithGia(polishedId: string): Promise<{ error?: string
   }
 }
 
-class UserError extends Error {}
+class UserError extends UserFacingError {}

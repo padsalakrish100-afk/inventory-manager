@@ -89,8 +89,8 @@ export default async function PolishPage({ searchParams }: { searchParams: Promi
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ExportButtons report="polish" params={params} />
-          <Link href="/polish/summary" className="min-h-10 rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
-            Summary
+          <Link href="/reports" className="min-h-10 rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
+            Reports
           </Link>
           <Link href="/polish/rapaport" className="min-h-10 rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
             Rap list

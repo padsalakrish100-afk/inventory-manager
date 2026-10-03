@@ -1,5 +1,6 @@
 "use server";
 
+import { assertPeriodsOpen, periodLockMessage, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -231,7 +232,7 @@ export async function deleteRateCard(rateId: string): Promise<{ error?: string }
     if (partyId) revalidatePath(`/karigars/${partyId}`);
     return {};
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
@@ -252,6 +253,7 @@ export async function adjustLabourEntry(entryId: string, amount: string, note: s
     const partyId = await prisma.$transaction(async (tx) => {
       const before = await tx.labourEntry.findUnique({ where: { id: entryId } });
       if (!before || before.voidedAt) throw new UserError("Labour entry not found.");
+      await assertPeriodsOpen(tx, [before.workDate]);
       if (before.payrollRunId) throw new UserError("Already paid in payroll — can't change it.");
       const after = await tx.labourEntry.update({
         where: { id: entryId },
@@ -267,7 +269,7 @@ export async function adjustLabourEntry(entryId: string, amount: string, note: s
     revalidatePath("/karigars/payroll");
     return {};
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
@@ -298,6 +300,8 @@ export async function addAdjustment(_prev: string | undefined, formData: FormDat
   const party = await prisma.party.findUnique({ where: { name: d.party } });
   if (!party || !party.roles.includes("KARIGAR")) return "No karigar with that name.";
   const date = dateInputToInstant(d.date);
+  const locked = await periodLockMessage(prisma, [date]);
+  if (locked) return locked;
 
   await prisma.$transaction(async (tx) => {
     const adj = await tx.karigarAdjustment.create({
@@ -325,6 +329,7 @@ export async function voidAdjustment(adjustmentId: string): Promise<{ error?: st
     const partyId = await prisma.$transaction(async (tx) => {
       const before = await tx.karigarAdjustment.findUnique({ where: { id: adjustmentId } });
       if (!before || before.voidedAt) throw new UserError("Not found.");
+      await assertPeriodsOpen(tx, [before.date]);
       if (before.payrollRunId) throw new UserError("Already settled in payroll — can't remove it.");
       const after = await tx.karigarAdjustment.update({ where: { id: adjustmentId }, data: { voidedAt: new Date() } });
       await writeAudit(tx, viewer.id, { action: "VOID", entity: "KarigarAdjustment", entityId: adjustmentId, before, after });
@@ -334,7 +339,7 @@ export async function voidAdjustment(adjustmentId: string): Promise<{ error?: st
     revalidatePath(`/karigars/${partyId}`);
     return {};
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
@@ -368,6 +373,7 @@ export async function payKarigar(input: {
 
   try {
     await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [new Date()]);
       const [line] = await unpaidPayroll(tx, start, end, d.partyId);
       if (!line) throw new UserError("Nothing unpaid for this karigar in the period.");
       if (rupees(line.net) !== Number(d.expectedNet).toFixed(2)) {
@@ -408,7 +414,7 @@ export async function payKarigar(input: {
       });
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 
@@ -427,6 +433,7 @@ export async function reversePayroll(runId: string, reason: string): Promise<{ e
     const partyId = await prisma.$transaction(async (tx) => {
       const before = await tx.payrollRun.findUnique({ where: { id: runId } });
       if (!before || before.voidedAt) throw new UserError("Payroll run not found.");
+      await assertPeriodsOpen(tx, [before.paidAt]);
       await tx.labourEntry.updateMany({ where: { payrollRunId: runId }, data: { payrollRunId: null } });
       await tx.karigarAdjustment.updateMany({ where: { payrollRunId: runId }, data: { payrollRunId: null } });
       const after = await tx.payrollRun.update({
@@ -440,9 +447,9 @@ export async function reversePayroll(runId: string, reason: string): Promise<{ e
     revalidatePath(`/karigars/${partyId}`);
     return {};
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
 
-class UserError extends Error {}
+class UserError extends UserFacingError {}

@@ -1,5 +1,6 @@
 "use server";
 
+import { assertPeriodsOpen, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -13,7 +14,7 @@ import { parseInput, zCurrency, zDateString, zId, zMoney, zOptionalFx, zOptional
 import { nextDocumentNo } from "@/lib/sales/numbers";
 import { openPayables, openReceivables, syncInvoicePaymentStatus } from "@/lib/sales/balances";
 
-class UserError extends Error {}
+class UserError extends UserFacingError {}
 
 const allocationSchema = z.object({
   kind: z.enum(["INVOICE", "ROUGH", "JOB_WORK", "BROKERAGE"]),
@@ -83,6 +84,7 @@ export async function createPayment(_prev: string | undefined, formData: FormDat
   let paymentId: string;
   try {
     paymentId = await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [date]);
       const party = await tx.party.findUnique({ where: { id: d.partyId } });
       if (!party) throw new UserError("Party not found.");
       const fxRate = d.fxRate ?? (await usdInrOn(tx, date));
@@ -133,7 +135,7 @@ export async function createPayment(_prev: string | undefined, formData: FormDat
       return payment.id;
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserFacingError) return err.message;
     throw err;
   }
 
@@ -155,6 +157,7 @@ export async function voidPayment(paymentId: string, reason: string): Promise<{ 
     await prisma.$transaction(async (tx) => {
       const before = await tx.payment.findUnique({ where: { id: paymentId }, include: { allocations: true } });
       if (!before || before.voidedAt) throw new UserError("Payment not found.");
+      await assertPeriodsOpen(tx, [before.date]);
       const after = await tx.payment.update({ where: { id: paymentId }, data: { voidedAt: new Date(), voidReason: parsed.data.reason } });
       await writeAudit(tx, viewer.id, { action: "VOID", entity: "Payment", entityId: paymentId, before, after });
       if (before.direction === "IN") {
@@ -162,7 +165,7 @@ export async function voidPayment(paymentId: string, reason: string): Promise<{ 
       }
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
   revalidatePath("/sales", "layout");

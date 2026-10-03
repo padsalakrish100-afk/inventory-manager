@@ -1,5 +1,6 @@
 "use server";
 
+import { assertPeriodsOpen, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -61,7 +62,7 @@ export async function moveStoneLocation(_prev: string | undefined, formData: For
       ]);
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserFacingError) return err.message;
     throw err;
   }
 
@@ -116,6 +117,7 @@ export async function recordBreakage(_prev: string | undefined, formData: FormDa
 
   try {
     await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [date]);
       const stone = await tx.product.findUnique({ where: { id: d.stoneId } });
       if (!stone) throw new UserError("Stone not found.");
       if (!["IN_PRODUCTION", "POLISHED"].includes(stone.status)) {
@@ -188,7 +190,7 @@ export async function recordBreakage(_prev: string | undefined, formData: FormDa
       ]);
     }, TX_OPTIONS);
   } catch (err) {
-    if (err instanceof UserError) return err.message;
+    if (err instanceof UserFacingError) return err.message;
     throw err;
   }
 
@@ -236,6 +238,7 @@ export async function splitStone(input: {
 
   try {
     const childIds = await prisma.$transaction(async (tx) => {
+      await assertPeriodsOpen(tx, [date]);
       const parent = await tx.product.findUnique({
         where: { id: d.stoneId },
         include: { polishedStone: { select: { id: true } } },
@@ -346,9 +349,9 @@ export async function splitStone(input: {
     revalidatePath("/stones");
     return { childIds };
   } catch (err) {
-    if (err instanceof UserError) return { error: err.message };
+    if (err instanceof UserFacingError) return { error: err.message };
     throw err;
   }
 }
 
-class UserError extends Error {}
+class UserError extends UserFacingError {}
