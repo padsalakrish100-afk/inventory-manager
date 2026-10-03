@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import {
   POLISH_STATUS_OPTIONS,
@@ -16,6 +17,7 @@ export default async function PolishPage({
 }: {
   searchParams: Promise<{ status?: string; sort?: string }>;
 }) {
+  await requirePagePermission("stock.view");
   const { status, sort } = await searchParams;
 
   const validStatus =
@@ -129,7 +131,7 @@ export default async function PolishPage({
                       <Link href="/manufacturing" className="underline">
                         Manufacturing
                       </Link>{" "}
-                      record once it's finished.
+                      record once it&apos;s finished.
                     </>
                   )}
                 </td>

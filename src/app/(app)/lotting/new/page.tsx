@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { can, requirePagePermission } from "@/lib/authz";
 import { LotForm } from "../lot-form";
 
 export default async function NewLotPage() {
+  const viewer = await requirePagePermission("lots.manage");
   const parties = await prisma.party.findMany({
-    where: { category: "TENDER_VENDOR", active: true },
+    where: { roles: { has: "VENDOR" }, active: true },
     orderBy: { name: "asc" },
   });
 
@@ -15,7 +17,7 @@ export default async function NewLotPage() {
           Rough came in from a tender or a party — log it and get every stone numbered.
         </p>
       </div>
-      <LotForm partyNames={parties.map((p) => p.name)} />
+      <LotForm partyNames={parties.map((p) => p.name)} showCost={can(viewer, "costs.view")} />
     </div>
   );
 }

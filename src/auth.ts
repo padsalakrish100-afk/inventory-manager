@@ -25,7 +25,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const username = usernameRaw.trim().toLowerCase();
 
         const user = await prisma.user.findUnique({ where: { username } });
-        if (!user) return null;
+        if (!user || !user.active) return null;
 
         const now = new Date();
         const lockExpired = user.lockedUntil !== null && user.lockedUntil <= now;

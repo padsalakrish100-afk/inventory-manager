@@ -2,13 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { can, ForbiddenError, requirePermission } from "@/lib/authz";
+import { TX_OPTIONS, writeAudit, type Tx } from "@/lib/audit";
+import { recordStoneEvents } from "@/lib/stone/events";
+import { ensurePartyWithRole } from "@/lib/party";
+import { parseInput, zOptionalCarat, zOptionalMoney, zRequiredText } from "@/lib/validation";
 
-async function nextLotNumber(): Promise<string> {
+async function nextLotNumber(tx: Tx): Promise<string> {
   const year = new Date().getFullYear();
   const prefix = `LOT-${year}-`;
-  const existing = await prisma.lot.findMany({
+  const existing = await tx.lot.findMany({
     where: { lotNumber: { startsWith: prefix } },
     select: { lotNumber: true },
   });
@@ -19,6 +24,17 @@ async function nextLotNumber(): Promise<string> {
   return `${prefix}${String(next).padStart(3, "0")}`;
 }
 
+const createLotSchema = z.object({
+  sourceParty: zRequiredText("Source (tender or party)"),
+  roughWeight: zOptionalCarat("Rough weight"),
+  purchaseCost: zOptionalMoney("Purchase cost"),
+  stoneCount: z.coerce
+    .number({ message: "Number of stones must be between 1 and 5000." })
+    .int("Number of stones must be between 1 and 5000.")
+    .min(1, "Number of stones must be between 1 and 5000.")
+    .max(5000, "Number of stones must be between 1 and 5000."),
+});
+
 // Creates a lot and immediately generates its numbered stones — the only
 // inputs are where the rough came from, how heavy it is, and how many
 // stones are in it. No certification, stage, or naming choices to make.
@@ -26,107 +42,162 @@ export async function createLot(
   _prevState: string | undefined,
   formData: FormData,
 ): Promise<string | undefined> {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const viewer = await requirePermission("lots.manage");
 
-  const sourcePartyName = String(formData.get("sourceParty") ?? "").trim();
-  const roughWeightRaw = String(formData.get("roughWeight") ?? "").trim();
-  const roughWeight = roughWeightRaw ? Number(roughWeightRaw) : null;
-  const purchaseCostRaw = String(formData.get("purchaseCost") ?? "").trim();
-  const purchaseCost = purchaseCostRaw ? Number(purchaseCostRaw) : null;
-  const stoneCount = Math.trunc(Number(formData.get("stoneCount") ?? 0));
-
-  if (!sourcePartyName) return "Source (tender or party) is required.";
-  if (roughWeight !== null && (!Number.isFinite(roughWeight) || roughWeight <= 0)) {
-    return "Rough weight must be a positive number.";
-  }
-  if (purchaseCost !== null && (!Number.isFinite(purchaseCost) || purchaseCost < 0)) {
-    return "Purchase cost must be a non-negative number.";
-  }
-  if (!Number.isInteger(stoneCount) || stoneCount < 1 || stoneCount > 5000) {
-    return "Number of stones must be between 1 and 5000.";
-  }
-
-  const sourceParty = await prisma.party.upsert({
-    where: { name: sourcePartyName },
-    update: {},
-    create: { name: sourcePartyName, category: "TENDER_VENDOR" },
+  const parsed = parseInput(createLotSchema, {
+    sourceParty: String(formData.get("sourceParty") ?? ""),
+    roughWeight: String(formData.get("roughWeight") ?? ""),
+    purchaseCost: String(formData.get("purchaseCost") ?? ""),
+    stoneCount: String(formData.get("stoneCount") ?? ""),
   });
+  if (!parsed.ok) return parsed.error;
+  const { sourceParty: sourcePartyName, roughWeight, stoneCount } = parsed.data;
+  if (roughWeight !== null && Number(roughWeight) <= 0) return "Rough weight must be a positive number.";
+  // Rough price is hidden from people who can't see costs, so it can't be
+  // entered by them either.
+  const purchaseCost = can(viewer, "costs.view") ? parsed.data.purchaseCost : null;
 
-  const lotNumber = await nextLotNumber();
+  const lotId = await prisma.$transaction(async (tx) => {
+    const sourceParty = await ensurePartyWithRole(tx, viewer.id, sourcePartyName, "VENDOR");
+    const lotNumber = await nextLotNumber(tx);
 
-  const lot = await prisma.lot.create({
-    data: { lotNumber, roughWeight, purchaseCost, sourcePartyId: sourceParty.id },
-  });
+    const lot = await tx.lot.create({
+      data: {
+        lotNumber,
+        roughWeight: roughWeight !== null ? Number(roughWeight) : null,
+        purchaseCost: purchaseCost !== null ? Number(purchaseCost) : null,
+        sourcePartyId: sourceParty.id,
+      },
+    });
 
-  const data = Array.from({ length: stoneCount }, (_, i) => {
-    const sku = `${lotNumber}-${String(i + 1).padStart(4, "0")}`;
-    return { sku, name: sku, unit: "pcs", stock: 1, lotId: lot.id };
-  });
-  await prisma.product.createMany({ data });
+    const skus = Array.from({ length: stoneCount }, (_, i) => `${lotNumber}-${String(i + 1).padStart(4, "0")}`);
+    await tx.product.createMany({
+      data: skus.map((sku) => ({ sku, name: sku, unit: "pcs", stock: 1, lotId: lot.id })),
+    });
+    const created = await tx.product.findMany({ where: { lotId: lot.id }, select: { id: true } });
+
+    await recordStoneEvents(
+      tx,
+      created.map((p) => ({
+        stoneId: p.id,
+        type: "CREATED" as const,
+        userId: viewer.id,
+        refType: "Lot",
+        refId: lot.id,
+        summary: `Created in lot ${lotNumber}`,
+      })),
+    );
+    await writeAudit(tx, viewer.id, [
+      { action: "CREATE", entity: "Lot", entityId: lot.id, after: lot },
+      {
+        action: "BULK_CREATE",
+        entity: "Product",
+        entityId: lot.id,
+        after: { lotId: lot.id, count: skus.length, first: skus[0], last: skus[skus.length - 1] },
+      },
+    ]);
+    return lot.id;
+  }, TX_OPTIONS);
 
   revalidatePath("/lotting");
-  redirect(`/lotting/${lot.id}`);
+  revalidatePath("/stones");
+  redirect(`/lotting/${lotId}`);
 }
 
 // Deletes a lot entered by mistake — only allowed while none of its stones
 // have ever been issued or transferred to Polish, so real manufacturing
 // history can never be silently erased.
 export async function deleteLot(lotId: string) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const viewer = await requirePermission("lots.manage");
 
-  const lot = await prisma.lot.findUnique({
-    where: { id: lotId },
-    include: {
-      products: {
-        include: {
-          polishedStone: true,
-          _count: { select: { movements: true, transactions: true, processLogs: true } },
+  await prisma.$transaction(async (tx) => {
+    const lot = await tx.lot.findUnique({
+      where: { id: lotId },
+      include: {
+        products: {
+          include: {
+            polishedStone: true,
+            _count: { select: { movements: true, transactions: true, processLogs: true, children: true } },
+          },
         },
       },
-    },
-  });
-  if (!lot) throw new Error("Lot not found.");
+    });
+    if (!lot) throw new Error("Lot not found.");
 
-  const hasHistory = lot.products.some((p) => p.polishedStone || p._count.movements > 0);
-  if (hasHistory) {
-    throw new Error("This lot has stones with manufacturing history — can't delete it.");
-  }
+    const hasHistory = lot.products.some((p) => p.polishedStone || p._count.movements > 0 || p._count.children > 0);
+    if (hasHistory) {
+      throw new Error("This lot has stones with manufacturing history — can't delete it.");
+    }
 
-  const hasLegacyRecords = lot.products.some((p) => p._count.transactions > 0 || p._count.processLogs > 0);
-  if (hasLegacyRecords) {
-    throw new Error(
-      "This lot has stones with recorded transaction history from before this app was rebuilt — can't delete it.",
-    );
-  }
+    const hasLegacyRecords = lot.products.some((p) => p._count.transactions > 0 || p._count.processLogs > 0);
+    if (hasLegacyRecords) {
+      throw new Error(
+        "This lot has stones with recorded transaction history from before this app was rebuilt — can't delete it.",
+      );
+    }
 
-  await prisma.product.deleteMany({ where: { lotId } });
-  await prisma.lot.delete({ where: { id: lotId } });
+    await tx.product.deleteMany({ where: { lotId } });
+    await tx.lot.delete({ where: { id: lotId } });
+
+    const { products, ...lotBefore } = lot;
+    await writeAudit(tx, viewer.id, {
+      action: "DELETE",
+      entity: "Lot",
+      entityId: lotId,
+      before: { ...lotBefore, stones: products.map((p) => ({ id: p.id, sku: p.sku, caratWeight: p.caratWeight })) },
+    });
+  }, TX_OPTIONS);
 
   revalidatePath("/lotting");
+  revalidatePath("/stones");
   revalidatePath("/manufacturing/reports");
 }
 
 // Saves one stone's weight from the inline field on the lot detail page —
 // used right after lotting to record actual per-stone weights as they're
 // known, without having to wait until the stone moves through manufacturing.
+// While the stone has never been issued, this is also its rough weight.
 export async function updateStoneWeight(productId: string, weightRaw: string): Promise<{ error?: string }> {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const viewer = await requirePermission("lots.manage");
 
-  const trimmed = weightRaw.trim();
-  const weight = trimmed ? Number(trimmed) : null;
-  if (weight !== null && (!Number.isFinite(weight) || weight < 0)) {
-    return { error: "Weight must be a non-negative number." };
-  }
+  const parsed = parseInput(zOptionalCarat("Weight"), weightRaw);
+  if (!parsed.ok) return { error: parsed.error };
+  const weight = parsed.data;
 
-  const product = await prisma.product.findUnique({ where: { id: productId }, select: { lotId: true } });
-  if (!product) return { error: "Stone not found." };
+  const lotId = await prisma.$transaction(async (tx) => {
+    const product = await tx.product.findUnique({
+      where: { id: productId },
+      include: { _count: { select: { movements: true } } },
+    });
+    if (!product) return null;
 
-  await prisma.product.update({ where: { id: productId }, data: { caratWeight: weight } });
+    const neverIssued = product._count.movements === 0;
+    const updated = await tx.product.update({
+      where: { id: productId },
+      data: {
+        caratWeight: weight !== null ? Number(weight) : null,
+        ...(neverIssued ? { roughWeight: weight } : {}),
+      },
+    });
 
-  if (product.lotId) revalidatePath(`/lotting/${product.lotId}`);
+    const { _count, ...before } = product;
+    await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "Product", entityId: productId, before, after: updated });
+    await recordStoneEvents(tx, [
+      {
+        stoneId: productId,
+        type: "WEIGHT",
+        userId: viewer.id,
+        weightBefore: product.caratWeight,
+        weightAfter: weight,
+        summary: neverIssued ? "Rough weight recorded" : "Weight corrected",
+      },
+    ]);
+    return product.lotId ?? "";
+  }, TX_OPTIONS);
+
+  if (lotId === null) return { error: "Stone not found." };
+  if (lotId) revalidatePath(`/lotting/${lotId}`);
+  revalidatePath(`/stones/${productId}`);
   return {};
 }
 
@@ -134,20 +205,26 @@ export async function updateStoneWeight(productId: string, weightRaw: string): P
 // suggested on each of its stones' Polish sale forms (split proportionally
 // by rough weight), editable any time as the real figure becomes known.
 export async function updateLotPurchaseCost(lotId: string, costRaw: string): Promise<{ error?: string }> {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const viewer = await requirePermission("lots.manage");
+  if (!can(viewer, "costs.view")) throw new ForbiddenError();
 
-  const trimmed = costRaw.trim();
-  const cost = trimmed ? Number(trimmed) : null;
-  if (cost !== null && (!Number.isFinite(cost) || cost < 0)) {
-    return { error: "Purchase cost must be a non-negative number." };
-  }
+  const parsed = parseInput(zOptionalMoney("Purchase cost"), costRaw);
+  if (!parsed.ok) return { error: parsed.error };
+  const cost = parsed.data;
 
-  const lot = await prisma.lot.findUnique({ where: { id: lotId }, select: { id: true } });
-  if (!lot) return { error: "Lot not found." };
-
-  await prisma.lot.update({ where: { id: lotId }, data: { purchaseCost: cost } });
+  const found = await prisma.$transaction(async (tx) => {
+    const lot = await tx.lot.findUnique({ where: { id: lotId } });
+    if (!lot) return false;
+    const updated = await tx.lot.update({
+      where: { id: lotId },
+      data: { purchaseCost: cost !== null ? Number(cost) : null },
+    });
+    await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "Lot", entityId: lotId, before: lot, after: updated });
+    return true;
+  });
+  if (!found) return { error: "Lot not found." };
 
   revalidatePath(`/lotting/${lotId}`);
+  revalidatePath("/lotting");
   return {};
 }

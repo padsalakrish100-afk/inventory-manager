@@ -10,5 +10,7 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
+    // Only needed for `prisma migrate dev` against a local/branch database.
+    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"],
   },
 });

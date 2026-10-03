@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { PARTY_CATEGORY_LABELS, PARTY_CATEGORY_STYLES } from "@/lib/party-category";
+import { requirePagePermission } from "@/lib/authz";
+import { PARTY_ROLE_LABELS, PARTY_ROLE_STYLES } from "@/lib/party-category";
 import { PROCESS_LABELS } from "@/lib/process";
 import { EditPartyForm } from "./edit-party-form";
 import { ActiveToggleButton } from "../active-toggle-button";
@@ -10,9 +10,7 @@ import { RateForm } from "./rate-form";
 import { DeleteRateButton } from "./delete-rate-button";
 
 export default async function PartyDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") redirect("/manufacturing");
+  await requirePagePermission("admin");
 
   const { id } = await params;
   const party = await prisma.party.findUnique({
@@ -23,6 +21,7 @@ export default async function PartyDetailPage({ params }: { params: Promise<{ id
   });
   if (!party) notFound();
 
+  const taxIds = (party.taxIds ?? {}) as Record<string, string | undefined>;
   const now = new Date();
   const currentRateByProcess = new Map<string, (typeof party.processRates)[number]>();
   for (const rate of party.processRates) {
@@ -39,11 +38,11 @@ export default async function PartyDetailPage({ params }: { params: Promise<{ id
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold text-zinc-900">{party.name}</h1>
-            {party.category && (
-              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${PARTY_CATEGORY_STYLES[party.category]}`}>
-                {PARTY_CATEGORY_LABELS[party.category]}
+            {party.roles.map((r) => (
+              <span key={r} className={`rounded-full px-2.5 py-1 text-xs font-medium ${PARTY_ROLE_STYLES[r]}`}>
+                {PARTY_ROLE_LABELS[r]}
               </span>
-            )}
+            ))}
             {!party.active && (
               <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-500">
                 Inactive
@@ -57,26 +56,34 @@ export default async function PartyDetailPage({ params }: { params: Promise<{ id
         <ActiveToggleButton partyId={party.id} active={party.active} />
       </div>
 
-      <section className="max-w-md">
+      <section className="max-w-2xl">
         <EditPartyForm
           id={party.id}
           defaults={{
-            category: party.category,
+            roles: party.roles,
+            companyName: party.companyName,
+            contactPerson: party.contactPerson,
+            country: party.country,
             phone: party.phone,
             email: party.email,
             address: party.address,
+            gstin: taxIds.gstin ?? null,
+            pan: taxIds.pan ?? null,
+            taxOther: taxIds.other ?? null,
+            creditLimit: party.creditLimit?.toString() ?? null,
+            creditCurrency: party.creditCurrency,
             notes: party.notes,
           }}
         />
       </section>
 
-      {party.category === "KARIGAR" && (
+      {(party.roles.includes("KARIGAR") || party.roles.includes("JOB_WORKER")) && (
         <section className="flex flex-col gap-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Process rates</h2>
             <p className="mt-1 text-sm text-zinc-500">
               What this karigar charges per carat, by process. Adding a new rate for a process
-              doesn't erase the old one — Manufacturing issues already recorded keep showing the
+              doesn&apos;t erase the old one — Manufacturing issues already recorded keep showing the
               labor cost they were actually charged.
             </p>
           </div>

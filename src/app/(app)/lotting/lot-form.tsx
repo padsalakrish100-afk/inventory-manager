@@ -1,10 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useFormAction } from "@/lib/use-form-action";
+import { useState } from "react";
 import { createLot } from "./actions";
 
-export function LotForm({ partyNames }: { partyNames: string[] }) {
-  const [error, formAction, pending] = useActionState(createLot, undefined);
+// `showCost`: rough price is hidden from people who can't see costs.
+export function LotForm({ partyNames, showCost }: { partyNames: string[]; showCost: boolean }) {
+  const [error, onSubmit, pending] = useFormAction(createLot, undefined);
 
   const [roughWeight, setRoughWeight] = useState("");
   const [ratePerCarat, setRatePerCarat] = useState("");
@@ -21,7 +23,7 @@ export function LotForm({ partyNames }: { partyNames: string[] }) {
   }
 
   return (
-    <form action={formAction} className="flex max-w-md flex-col gap-5">
+    <form onSubmit={onSubmit} className="flex max-w-md flex-col gap-5">
       <div>
         <label htmlFor="sourceParty" className="block text-sm font-medium text-zinc-700">
           Source (tender or party)
@@ -50,8 +52,9 @@ export function LotForm({ partyNames }: { partyNames: string[] }) {
           id="roughWeight"
           name="roughWeight"
           type="number"
+          inputMode="decimal"
           min={0}
-          step="0.01"
+          step="0.001"
           value={roughWeight}
           onChange={(e) => {
             setRoughWeight(e.target.value);
@@ -62,6 +65,8 @@ export function LotForm({ partyNames }: { partyNames: string[] }) {
         />
       </div>
 
+      {showCost && (
+      <>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label htmlFor="ratePerCarat" className="block text-sm font-medium text-zinc-700">
@@ -105,6 +110,8 @@ export function LotForm({ partyNames }: { partyNames: string[] }) {
         Enter either one — price/carat × weight fills the total automatically. Only the total is saved; used later
         to auto-split a rough cost share across each stone by weight.
       </p>
+      </>
+      )}
 
       <div>
         <label htmlFor="stoneCount" className="block text-sm font-medium text-zinc-700">
@@ -121,7 +128,7 @@ export function LotForm({ partyNames }: { partyNames: string[] }) {
           className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
         />
         <p className="mt-1 text-xs text-zinc-500">
-          The lot number and every stone's number are generated automatically — nothing else to fill in.
+          The lot number and every stone&apos;s number are generated automatically — nothing else to fill in.
         </p>
       </div>
 

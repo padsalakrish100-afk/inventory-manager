@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteStone } from "../../actions";
+import { deleteStone } from "../../manufacturing/actions";
 
 export function DeleteStoneButton({ productId, lotId }: { productId: string; lotId: string | null }) {
   const [isPending, startTransition] = useTransition();

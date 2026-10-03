@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { undoMovement } from "../../actions";
+import { undoMovement } from "../../manufacturing/actions";
 
 export function UndoMovementButton({ movementId, productId }: { movementId: string; productId: string }) {
   const [isPending, startTransition] = useTransition();

@@ -1,17 +1,17 @@
 "use client";
 
-import { useActionState } from "react";
+import { useFormAction } from "@/lib/use-form-action";
 import { addProcessRate } from "../actions";
 import { PROCESS_OPTIONS } from "@/lib/process";
 
 export function RateForm({ partyId }: { partyId: string }) {
   const boundAction = addProcessRate.bind(null, partyId);
-  const [error, formAction, pending] = useActionState(boundAction, undefined);
+  const [error, onSubmit, pending] = useFormAction(boundAction, undefined, { resetOnSuccess: true });
 
   const today = new Date().toISOString().slice(0, 10);
 
   return (
-    <form action={formAction} className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4">
+    <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4">
       <div>
         <label htmlFor="process" className="block text-xs font-medium text-zinc-500">
           Process

@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
+import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { PROCESS_LABELS } from "@/lib/process";
 import { PrintLabelButton } from "@/components/barcode-label";
 
 export default async function MemoPage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePagePermission("mfg.view");
   const { id } = await params;
   const memo = await prisma.memo.findUnique({
     where: { id },

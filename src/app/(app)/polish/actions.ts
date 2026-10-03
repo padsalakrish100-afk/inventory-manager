@@ -1,145 +1,200 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { dateInputToInstant } from "@/lib/dates";
 import type { PolishStatus, PaymentStatus, SaleType } from "@/generated/prisma/client";
-import { POLISH_STATUS_VALUES, PAYMENT_STATUS_VALUES, SALE_TYPE_VALUES } from "@/lib/polish-status";
+import { POLISH_STATUS_VALUES, PAYMENT_STATUS_VALUES, SALE_TYPE_VALUES, POLISH_STATUS_LABELS } from "@/lib/polish-status";
+import { can, requirePermission } from "@/lib/authz";
+import { TX_OPTIONS, writeAudit, type AuditEntry } from "@/lib/audit";
+import { recordStoneEvents } from "@/lib/stone/events";
+import { ensurePartyWithRole } from "@/lib/party";
+import { canTransition, stoneStatusFromPolishStatus, STONE_STATUS_LABELS } from "@/lib/stone/status";
+import { formToObject, parseInput, zDateString, zOptionalCarat, zOptionalMoney, zOptionalText } from "@/lib/validation";
+
+const gradingSchema = z.object({
+  certified: z.string().optional().transform((v) => v === "true"),
+  certLab: zOptionalText(50),
+  certNumber: zOptionalText(100),
+  saleType: z.union([z.literal("").transform(() => null), z.enum(SALE_TYPE_VALUES, { message: "Invalid sale type." })]),
+  shape: zOptionalText(100),
+  caratWeight: zOptionalCarat("Carat weight"),
+  color: zOptionalText(20),
+  clarity: zOptionalText(20),
+  cutGrade: zOptionalText(30),
+  polishGrade: zOptionalText(30),
+  symmetry: zOptionalText(30),
+  fluorescence: zOptionalText(30),
+  measurements: zOptionalText(100),
+  notes: zOptionalText(2000),
+});
+
+function fieldsFrom(formData: FormData, keys: string[]): Record<string, string> {
+  const raw = formToObject(formData);
+  return Object.fromEntries(keys.map((k) => [k, typeof raw[k] === "string" ? (raw[k] as string) : ""]));
+}
 
 export async function updatePolishedStone(
   polishedStoneId: string,
   _prevState: string | undefined,
   formData: FormData,
 ): Promise<string | undefined> {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const viewer = await requirePermission("stock.edit");
 
-  const certified = formData.get("certified") === "true";
-  const certLab = String(formData.get("certLab") ?? "").trim() || null;
-  const certNumber = String(formData.get("certNumber") ?? "").trim() || null;
-  const saleTypeRaw = String(formData.get("saleType") ?? "").trim();
-  const shape = String(formData.get("shape") ?? "").trim() || null;
-  const caratWeightRaw = String(formData.get("caratWeight") ?? "").trim();
-  const caratWeight = caratWeightRaw ? Number(caratWeightRaw) : null;
-  const color = String(formData.get("color") ?? "").trim() || null;
-  const clarity = String(formData.get("clarity") ?? "").trim() || null;
-  const cutGrade = String(formData.get("cutGrade") ?? "").trim() || null;
-  const polishGrade = String(formData.get("polishGrade") ?? "").trim() || null;
-  const symmetry = String(formData.get("symmetry") ?? "").trim() || null;
-  const fluorescence = String(formData.get("fluorescence") ?? "").trim() || null;
-  const measurements = String(formData.get("measurements") ?? "").trim() || null;
-  const notes = String(formData.get("notes") ?? "").trim() || null;
+  const parsed = parseInput(gradingSchema, fieldsFrom(formData, Object.keys(gradingSchema.shape)));
+  if (!parsed.ok) return parsed.error;
+  const { caratWeight, saleType, ...rest } = parsed.data;
 
-  if (caratWeight !== null && (!Number.isFinite(caratWeight) || caratWeight < 0)) {
-    return "Carat weight must be a non-negative number.";
-  }
-  if (saleTypeRaw && !(SALE_TYPE_VALUES as readonly string[]).includes(saleTypeRaw)) {
-    return "Invalid sale type.";
-  }
-
-  await prisma.polishedStone.update({
-    where: { id: polishedStoneId },
-    data: {
-      certified,
-      certLab,
-      certNumber,
-      saleType: saleTypeRaw ? (saleTypeRaw as SaleType) : null,
-      shape,
-      caratWeight,
-      color,
-      clarity,
-      cutGrade,
-      polishGrade,
-      symmetry,
-      fluorescence,
-      measurements,
-      notes,
-    },
+  const found = await prisma.$transaction(async (tx) => {
+    const before = await tx.polishedStone.findUnique({ where: { id: polishedStoneId } });
+    if (!before) return false;
+    const after = await tx.polishedStone.update({
+      where: { id: polishedStoneId },
+      data: {
+        ...rest,
+        saleType: saleType as SaleType | null,
+        caratWeight: caratWeight !== null ? Number(caratWeight) : null,
+      },
+    });
+    await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "PolishedStone", entityId: polishedStoneId, before, after });
+    return true;
   });
+  if (!found) return "Stock entry not found.";
 
   revalidatePath("/polish");
   revalidatePath(`/polish/${polishedStoneId}`);
 }
 
+const saleSchema = z.object({
+  status: z.enum(POLISH_STATUS_VALUES, { message: "Invalid status." }),
+  location: zOptionalText(100),
+  currency: z.enum(["USD", "INR"], { message: "Currency must be USD or INR." }),
+  buyer: zOptionalText(200),
+  paymentStatus: z.union([
+    z.literal("").transform(() => null),
+    z.enum(PAYMENT_STATUS_VALUES, { message: "Invalid payment status." }),
+  ]),
+  askingPrice: zOptionalMoney("Asking price"),
+  soldPrice: zOptionalMoney("Sold price"),
+  soldDate: zDateString("Sold date"),
+  roughCostAlloc: zOptionalMoney("Rough cost"),
+  laborCost: zOptionalMoney("Labor cost"),
+  certCost: zOptionalMoney("Certification cost"),
+  otherCost: zOptionalMoney("Other cost"),
+});
+
+const COST_FIELDS = ["roughCostAlloc", "laborCost", "certCost", "otherCost"] as const;
+
 // Sales & cost tracking for a polished stone — status, where it's kept, its
 // asking price, the buyer/sale details once sold, and the cost components
-// that make up its total cost (computed in the app, never stored).
+// that make up its total cost. The stone's lifecycle status and location
+// follow the sale status.
 export async function updateSaleInfo(
   polishedStoneId: string,
   _prevState: string | undefined,
   formData: FormData,
 ): Promise<string | undefined> {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const viewer = await requirePermission("stock.edit");
 
-  const status = String(formData.get("status") ?? "AVAILABLE");
-  const location = String(formData.get("location") ?? "").trim() || null;
-  const currency = String(formData.get("currency") ?? "USD").trim() || "USD";
-  const buyerName = String(formData.get("buyer") ?? "").trim();
-  const paymentStatusRaw = String(formData.get("paymentStatus") ?? "").trim();
+  const raw = fieldsFrom(formData, Object.keys(saleSchema.shape));
+  if (!raw.currency) raw.currency = "USD";
+  if (!raw.status) raw.status = "AVAILABLE";
+  const parsed = parseInput(saleSchema, raw);
+  if (!parsed.ok) return parsed.error;
+  const d = parsed.data;
+  const canSeeCosts = can(viewer, "costs.view");
 
-  if (!(POLISH_STATUS_VALUES as readonly string[]).includes(status)) return "Invalid status.";
-  if (paymentStatusRaw && !(PAYMENT_STATUS_VALUES as readonly string[]).includes(paymentStatusRaw)) {
-    return "Invalid payment status.";
+  const money = (v: string | null) => (v !== null ? Number(v) : null);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const before = await tx.polishedStone.findUnique({
+        where: { id: polishedStoneId },
+        include: { sourceProduct: true },
+      });
+      if (!before) throw new UserError("Stock entry not found.");
+      const product = before.sourceProduct;
+
+      // Lifecycle: only valid status moves are allowed (an admin can correct
+      // a mistake in any direction).
+      const nextStoneStatus = stoneStatusFromPolishStatus(d.status);
+      if (
+        product.status !== nextStoneStatus &&
+        !canTransition(product.status, nextStoneStatus) &&
+        viewer.role !== "ADMIN"
+      ) {
+        throw new UserError(
+          `A stone can't go from ${STONE_STATUS_LABELS[product.status]} to ${STONE_STATUS_LABELS[nextStoneStatus]} — ask an admin to correct it.`,
+        );
+      }
+
+      let buyerId: string | null = null;
+      if (d.buyer) buyerId = (await ensurePartyWithRole(tx, viewer.id, d.buyer, "CUSTOMER")).id;
+
+      const after = await tx.polishedStone.update({
+        where: { id: polishedStoneId },
+        data: {
+          status: d.status as PolishStatus,
+          location: d.location,
+          askingPrice: money(d.askingPrice),
+          currency: d.currency,
+          buyerId,
+          soldPrice: money(d.soldPrice),
+          soldDate: d.soldDate ? dateInputToInstant(d.soldDate) : null,
+          paymentStatus: d.paymentStatus as PaymentStatus | null,
+          // Cost fields are hidden from people who can't see costs, so their
+          // (absent) values must not wipe what's stored.
+          ...(canSeeCosts ? Object.fromEntries(COST_FIELDS.map((f) => [f, money(d[f])])) : {}),
+        },
+      });
+
+      const nextLocation =
+        nextStoneStatus === "SOLD"
+          ? "SOLD"
+          : nextStoneStatus === "ON_MEMO"
+            ? "ON_MEMO"
+            : product.stockLocation === "SOLD" || product.stockLocation === "ON_MEMO"
+              ? "OFFICE_SAFE"
+              : product.stockLocation;
+      const productAfter = await tx.product.update({
+        where: { id: product.id },
+        data: {
+          status: nextStoneStatus,
+          stockLocation: nextLocation,
+          locationPartyId: nextLocation === "SOLD" || nextLocation === "ON_MEMO" ? buyerId : null,
+        },
+      });
+
+      const { sourceProduct: _sp, ...polishedBefore } = before;
+      const audits: AuditEntry[] = [
+        { action: "UPDATE", entity: "PolishedStone", entityId: polishedStoneId, before: polishedBefore, after },
+        { action: "UPDATE", entity: "Product", entityId: product.id, before: product, after: productAfter },
+      ];
+      await writeAudit(tx, viewer.id, audits);
+
+      if (before.status !== d.status) {
+        await recordStoneEvents(tx, [
+          {
+            stoneId: product.id,
+            type: d.status === "SOLD" ? "SOLD" : "STATUS",
+            at: d.status === "SOLD" && d.soldDate ? dateInputToInstant(d.soldDate) : undefined,
+            userId: viewer.id,
+            partyId: buyerId,
+            refType: "PolishedStone",
+            refId: polishedStoneId,
+            summary:
+              d.status === "SOLD"
+                ? "Sold"
+                : `Status: ${POLISH_STATUS_LABELS[before.status]} → ${POLISH_STATUS_LABELS[d.status]}`,
+          },
+        ]);
+      }
+    }, TX_OPTIONS);
+  } catch (err) {
+    if (err instanceof UserError) return err.message;
+    throw err;
   }
-
-  function parseMoney(field: string): number | null {
-    const raw = String(formData.get(field) ?? "").trim();
-    return raw ? Number(raw) : null;
-  }
-
-  const askingPrice = parseMoney("askingPrice");
-  const soldPrice = parseMoney("soldPrice");
-  const roughCostAlloc = parseMoney("roughCostAlloc");
-  const laborCost = parseMoney("laborCost");
-  const certCost = parseMoney("certCost");
-  const otherCost = parseMoney("otherCost");
-
-  for (const [label, value] of [
-    ["Asking price", askingPrice],
-    ["Sold price", soldPrice],
-    ["Rough cost", roughCostAlloc],
-    ["Labor cost", laborCost],
-    ["Certification cost", certCost],
-    ["Other cost", otherCost],
-  ] as const) {
-    if (value !== null && (!Number.isFinite(value) || value < 0)) {
-      return `${label} must be a non-negative number.`;
-    }
-  }
-
-  const soldDateRaw = String(formData.get("soldDate") ?? "").trim();
-  const soldDate = soldDateRaw ? new Date(soldDateRaw) : null;
-  if (soldDateRaw && Number.isNaN(soldDate?.getTime())) return "Invalid sold date.";
-
-  let buyerId: string | null = null;
-  if (buyerName) {
-    const buyer = await prisma.party.upsert({
-      where: { name: buyerName },
-      update: {},
-      create: { name: buyerName, category: "CUSTOMER" },
-    });
-    buyerId = buyer.id;
-  }
-
-  await prisma.polishedStone.update({
-    where: { id: polishedStoneId },
-    data: {
-      status: status as PolishStatus,
-      location,
-      askingPrice,
-      currency,
-      roughCostAlloc,
-      laborCost,
-      certCost,
-      otherCost,
-      buyerId,
-      soldPrice,
-      soldDate,
-      paymentStatus: paymentStatusRaw ? (paymentStatusRaw as PaymentStatus) : null,
-    },
-  });
 
   revalidatePath("/polish");
   revalidatePath("/polish/summary");
@@ -148,18 +203,50 @@ export async function updateSaleInfo(
 
 // Undoes a mistaken transfer — deletes the Stock ID and sends the stone
 // back to Manufacturing so it can be transferred again correctly. Returns
-// the source stone's id so the caller can navigate there itself.
+// the source stone's id so the caller can navigate there itself. Not
+// allowed once the stone has been sold.
 export async function undoTransfer(polishedStoneId: string): Promise<string> {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const viewer = await requirePermission("stones.edit");
 
-  const polished = await prisma.polishedStone.findUnique({ where: { id: polishedStoneId } });
-  if (!polished) throw new Error("Stock entry not found.");
+  const sourceProductId = await prisma.$transaction(async (tx) => {
+    const polished = await tx.polishedStone.findUnique({
+      where: { id: polishedStoneId },
+      include: { sourceProduct: true },
+    });
+    if (!polished) throw new Error("Stock entry not found.");
+    if (polished.status === "SOLD" || polished.soldPrice !== null) {
+      throw new Error("This stone has a sale recorded — it can't be sent back to Manufacturing.");
+    }
 
-  await prisma.polishedStone.delete({ where: { id: polishedStoneId } });
+    await tx.polishedStone.delete({ where: { id: polishedStoneId } });
+    const productAfter = await tx.product.update({
+      where: { id: polished.sourceProductId },
+      data: { status: "IN_PRODUCTION", stockLocation: "FACTORY", locationPartyId: null },
+    });
+
+    const { sourceProduct, ...polishedBefore } = polished;
+    await writeAudit(tx, viewer.id, [
+      { action: "DELETE", entity: "PolishedStone", entityId: polished.id, before: polishedBefore },
+      { action: "UPDATE", entity: "Product", entityId: sourceProduct.id, before: sourceProduct, after: productAfter },
+    ]);
+    await recordStoneEvents(tx, [
+      {
+        stoneId: sourceProduct.id,
+        type: "UNDO_TRANSFER",
+        userId: viewer.id,
+        refType: "PolishedStone",
+        refId: polished.id,
+        summary: `Transfer undone — Stock ID ${polished.stockId} removed`,
+      },
+    ]);
+    return polished.sourceProductId;
+  }, TX_OPTIONS);
 
   revalidatePath("/polish");
   revalidatePath("/manufacturing");
   revalidatePath("/manufacturing/reports");
-  return polished.sourceProductId;
+  revalidatePath(`/stones/${sourceProductId}`);
+  return sourceProductId;
 }
+
+class UserError extends Error {}

@@ -1,45 +1,94 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import type { PartyCategory, ProcessName } from "@/generated/prisma/client";
-import { PARTY_CATEGORY_VALUES } from "@/lib/party-category";
+import { dateInputToStartOfDayIST } from "@/lib/dates";
+import { Prisma, type PartyRoleType, type ProcessName } from "@/generated/prisma/client";
 import { PROCESS_VALUES } from "@/lib/process";
+import { requirePermission } from "@/lib/authz";
+import { writeAudit } from "@/lib/audit";
+import { categoryForRoles, PARTY_ROLE_VALUES } from "@/lib/party";
+import { formToObject, parseInput, zDateString, zOptionalMoney, zOptionalText, zRequiredText } from "@/lib/validation";
 
-async function requireAdmin() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
-  if (session.user.role !== "ADMIN") {
-    throw new Error("Only admins can manage parties.");
-  }
-  return session;
+const partySchema = z.object({
+  roles: z.array(z.enum(PARTY_ROLE_VALUES)).min(1, "Choose at least one role.").default([]),
+  companyName: zOptionalText(200),
+  contactPerson: zOptionalText(200),
+  country: zOptionalText(100),
+  phone: zOptionalText(50),
+  email: z.union([z.literal("").transform(() => null), z.string().trim().email("Email is invalid.").max(200)]),
+  address: zOptionalText(500),
+  gstin: zOptionalText(30),
+  pan: zOptionalText(30),
+  taxOther: zOptionalText(100),
+  creditLimit: zOptionalMoney("Credit limit"),
+  creditCurrency: z.enum(["USD", "INR"]).default("USD"),
+  notes: zOptionalText(2000),
+});
+
+type PartyInput = z.output<typeof partySchema>;
+
+function readParty(formData: FormData) {
+  const raw = formToObject(formData);
+  const str = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : "");
+  return parseInput(partySchema, {
+    roles: Array.isArray(raw["roles[]"]) ? raw["roles[]"] : [],
+    companyName: str("companyName"),
+    contactPerson: str("contactPerson"),
+    country: str("country"),
+    phone: str("phone"),
+    email: str("email"),
+    address: str("address"),
+    gstin: str("gstin"),
+    pan: str("pan"),
+    taxOther: str("taxOther"),
+    creditLimit: str("creditLimit"),
+    creditCurrency: str("creditCurrency") || "USD",
+    notes: str("notes"),
+  });
+}
+
+function partyData(d: PartyInput) {
+  const taxIds = Object.fromEntries(
+    Object.entries({ gstin: d.gstin, pan: d.pan, other: d.taxOther }).filter(([, v]) => v),
+  );
+  return {
+    roles: d.roles as PartyRoleType[],
+    companyName: d.companyName,
+    contactPerson: d.contactPerson,
+    country: d.country,
+    phone: d.phone,
+    email: d.email,
+    address: d.address,
+    taxIds: Object.keys(taxIds).length > 0 ? taxIds : undefined,
+    creditLimit: d.creditLimit,
+    creditCurrency: d.creditLimit !== null ? d.creditCurrency : null,
+    notes: d.notes,
+  };
 }
 
 export async function createParty(
   _prevState: string | undefined,
   formData: FormData,
 ): Promise<string | undefined> {
-  await requireAdmin();
+  const viewer = await requirePermission("admin");
 
-  const name = String(formData.get("name") ?? "").trim();
-  const category = String(formData.get("category") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim() || null;
-  const email = String(formData.get("email") ?? "").trim() || null;
-  const address = String(formData.get("address") ?? "").trim() || null;
-  const notes = String(formData.get("notes") ?? "").trim() || null;
-
-  if (!name) return "Name is required.";
-  if (!category || !(PARTY_CATEGORY_VALUES as readonly string[]).includes(category)) {
-    return "Choose a category.";
-  }
+  const nameParsed = parseInput(zRequiredText("Name"), String(formData.get("name") ?? ""));
+  if (!nameParsed.ok) return nameParsed.error;
+  const name = nameParsed.data;
+  const parsed = readParty(formData);
+  if (!parsed.ok) return parsed.error;
 
   const existing = await prisma.party.findUnique({ where: { name } });
   if (existing) return "A party with that name already exists.";
 
-  await prisma.party.create({
-    data: { name, category: category as PartyCategory, phone, email, address, notes },
+  await prisma.$transaction(async (tx) => {
+    const data = partyData(parsed.data);
+    const party = await tx.party.create({
+      data: { name, ...data, category: categoryForRoles(data.roles, null) },
+    });
+    await writeAudit(tx, viewer.id, { action: "CREATE", entity: "Party", entityId: party.id, after: party });
   });
 
   revalidatePath("/settings/parties");
@@ -50,56 +99,73 @@ export async function updateParty(
   _prevState: string | undefined,
   formData: FormData,
 ): Promise<string | undefined> {
-  await requireAdmin();
+  const viewer = await requirePermission("admin");
 
-  const category = String(formData.get("category") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim() || null;
-  const email = String(formData.get("email") ?? "").trim() || null;
-  const address = String(formData.get("address") ?? "").trim() || null;
-  const notes = String(formData.get("notes") ?? "").trim() || null;
+  const parsed = readParty(formData);
+  if (!parsed.ok) return parsed.error;
 
-  if (!category || !(PARTY_CATEGORY_VALUES as readonly string[]).includes(category)) {
-    return "Choose a category.";
-  }
-
-  await prisma.party.update({
-    where: { id: partyId },
-    data: { category: category as PartyCategory, phone, email, address, notes },
+  const found = await prisma.$transaction(async (tx) => {
+    const before = await tx.party.findUnique({ where: { id: partyId } });
+    if (!before) return false;
+    const data = partyData(parsed.data);
+    const after = await tx.party.update({
+      where: { id: partyId },
+      data: { ...data, taxIds: data.taxIds ?? Prisma.DbNull, category: categoryForRoles(data.roles, before.category) },
+    });
+    await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "Party", entityId: partyId, before, after });
+    return true;
   });
+  if (!found) return "Party not found.";
 
   revalidatePath("/settings/parties");
   revalidatePath(`/settings/parties/${partyId}`);
 }
 
 export async function setPartyActive(partyId: string, active: boolean) {
-  await requireAdmin();
+  const viewer = await requirePermission("admin");
+  const parsed = parseInput(z.object({ partyId: z.string().min(1), active: z.boolean() }), { partyId, active });
+  if (!parsed.ok) throw new Error(parsed.error);
 
-  await prisma.party.update({ where: { id: partyId }, data: { active } });
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.party.findUniqueOrThrow({ where: { id: partyId } });
+    const after = await tx.party.update({ where: { id: partyId }, data: { active } });
+    await writeAudit(tx, viewer.id, { action: "UPDATE", entity: "Party", entityId: partyId, before, after });
+  });
 
   revalidatePath("/settings/parties");
   revalidatePath(`/settings/parties/${partyId}`);
 }
+
+const rateSchema = z.object({
+  process: z.enum(PROCESS_VALUES, { message: "Invalid process." }),
+  ratePerCarat: z.coerce
+    .number({ message: "Rate per carat must be a positive number." })
+    .positive("Rate per carat must be a positive number.")
+    .max(10_000_000, "Rate per carat is too large."),
+  effectiveFrom: zDateString("Effective-from date"),
+});
 
 export async function addProcessRate(
   partyId: string,
   _prevState: string | undefined,
   formData: FormData,
 ): Promise<string | undefined> {
-  await requireAdmin();
+  const viewer = await requirePermission("admin");
 
-  const process = String(formData.get("process") ?? "").trim();
-  const ratePerCarat = Number(formData.get("ratePerCarat") ?? 0);
-  const effectiveFromRaw = String(formData.get("effectiveFrom") ?? "").trim();
-  const effectiveFrom = effectiveFromRaw ? new Date(effectiveFromRaw) : new Date();
+  const parsed = parseInput(rateSchema, {
+    process: String(formData.get("process") ?? ""),
+    ratePerCarat: String(formData.get("ratePerCarat") ?? ""),
+    effectiveFrom: String(formData.get("effectiveFrom") ?? ""),
+  });
+  if (!parsed.ok) return parsed.error;
+  const { process, ratePerCarat } = parsed.data;
+  const effectiveFrom = dateInputToStartOfDayIST(parsed.data.effectiveFrom);
 
-  if (!(PROCESS_VALUES as readonly string[]).includes(process)) return "Invalid process.";
-  if (!Number.isFinite(ratePerCarat) || ratePerCarat <= 0) {
-    return "Rate per carat must be a positive number.";
-  }
-  if (Number.isNaN(effectiveFrom.getTime())) return "Invalid effective-from date.";
-
-  await prisma.processRate.create({
-    data: { partyId, process: process as ProcessName, ratePerCarat, effectiveFrom },
+  await prisma.$transaction(async (tx) => {
+    const rate = await tx.processRate.create({
+      data: { partyId, process: process as ProcessName, ratePerCarat, effectiveFrom },
+    });
+    await writeAudit(tx, viewer.id, { action: "CREATE", entity: "ProcessRate", entityId: rate.id, after: rate });
   });
 
   revalidatePath(`/settings/parties/${partyId}`);
@@ -107,9 +173,14 @@ export async function addProcessRate(
 }
 
 export async function deleteProcessRate(rateId: string, partyId: string) {
-  await requireAdmin();
+  const viewer = await requirePermission("admin");
 
-  await prisma.processRate.delete({ where: { id: rateId } });
+  await prisma.$transaction(async (tx) => {
+    const rate = await tx.processRate.findUnique({ where: { id: rateId } });
+    if (!rate || rate.partyId !== partyId) throw new Error("Rate not found.");
+    await tx.processRate.delete({ where: { id: rateId } });
+    await writeAudit(tx, viewer.id, { action: "DELETE", entity: "ProcessRate", entityId: rateId, before: rate });
+  });
 
   revalidatePath(`/settings/parties/${partyId}`);
   revalidatePath("/manufacturing/issue");

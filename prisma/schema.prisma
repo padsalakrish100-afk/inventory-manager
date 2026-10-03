@@ -10,9 +10,14 @@ datasource db {
   provider = "postgresql"
 }
 
+// ADMIN = Owner/Admin. STAFF is the original pre-ERP role, kept so existing
+// rows stay valid — the app treats it exactly like MANAGER.
 enum Role {
   ADMIN
   STAFF
+  MANAGER
+  OPERATOR
+  SALES
 }
 
 model Setting {
@@ -21,6 +26,10 @@ model Setting {
   locations   String   @default("Surat,Mumbai")
   accentColor String   @default("#18181b")
   updatedAt   DateTime @updatedAt
+
+  // Stones out with a karigar/department longer than this are highlighted
+  // on the Pending report.
+  pendingAlertDays Int @default(7)
 }
 
 model User {
@@ -35,7 +44,16 @@ model User {
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
 
+  // Lets a MANAGER see cost, profit, and rough price (ADMIN always can).
+  canSeeCosts Boolean @default(false)
+  // Deactivated users can't sign in; kept for history instead of deleted.
+  active      Boolean @default(true)
+
   transactions Transaction[]
+  departments  UserDepartment[]
+  stoneEvents  StoneEvent[]
+  auditLogs    AuditLog[]
+  attachments  Attachment[]
 }
 
 model Product {
@@ -74,6 +92,31 @@ model Product {
   currentParty   Party?       @relation("CurrentlyHolding", fields: [currentPartyId], references: [id])
   currentPartyId String?
 
+  // ERP: the configurable stage/department the stone is at right now — the
+  // successor to `currentProcess`, kept in sync with it while both exist.
+  currentStage        ProcessStage? @relation(fields: [currentStageId], references: [id])
+  currentStageId      String?
+  currentDepartment   Department?   @relation(fields: [currentDepartmentId], references: [id])
+  currentDepartmentId String?
+
+  // Lifecycle status and physical location for the whole life of the stone
+  // (rough → polished → sold), not just the Polish stage.
+  status          StoneStatus   @default(IN_PRODUCTION)
+  stockLocation   StoneLocation @default(FACTORY)
+  locationParty   Party?        @relation("StoneLocationParty", fields: [locationPartyId], references: [id])
+  locationPartyId String?
+
+  // Weight at lotting, frozen — the base for yield %. `caratWeight` stays
+  // the stone's current weight.
+  roughWeight Decimal? @db.Decimal(12, 3)
+
+  // Splitting: one rough becomes several children, each its own stone.
+  parent   Product?  @relation("StoneSplit", fields: [parentId], references: [id])
+  parentId String?
+  children Product[] @relation("StoneSplit")
+
+  deletedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -81,9 +124,37 @@ model Product {
   processLogs   ProcessLog[]
   movements     ProcessMovement[]
   polishedStone PolishedStone?
+  events        StoneEvent[]
 
   @@index([lotId])
   @@index([currentPartyId])
+  @@index([status])
+  @@index([stockLocation])
+  @@index([parentId])
+  @@index([currentStageId])
+  @@index([currentDepartmentId])
+  @@index([createdAt])
+}
+
+enum StoneStatus {
+  IN_PRODUCTION
+  POLISHED
+  AT_LAB
+  IN_STOCK
+  ON_MEMO
+  SOLD
+  RETURNED
+  SPLIT
+  BROKEN
+}
+
+enum StoneLocation {
+  FACTORY
+  OFFICE_SAFE
+  ON_MEMO
+  AT_LAB
+  IN_TRANSIT
+  SOLD
 }
 
 enum ProcessName {
@@ -387,6 +458,20 @@ model Party {
   notes     String?
   createdAt DateTime       @default(now())
 
+  // ERP: one party can play several roles. Supersedes `category`, which is
+  // kept in sync for older screens.
+  roles          PartyRoleType[] @default([])
+  companyName    String?
+  contactPerson  String?
+  country        String?
+  // e.g. {"gstin": "...", "pan": "...", "ein": "...", "iec": "..."}
+  taxIds         Json?
+  creditLimit    Decimal?        @db.Decimal(14, 2)
+  creditCurrency String?
+
+  stonesAtLocation Product[]    @relation("StoneLocationParty")
+  stoneEvents      StoneEvent[]
+
   transactions         Transaction[]
   lotExpenses          LotExpense[]
   processLogs          ProcessLog[]
@@ -396,6 +481,16 @@ model Party {
   lotsSourced          Lot[]             @relation("LotSource")
   stonesCurrentlyAt    Product[]         @relation("CurrentlyHolding")
   polishedStonesBought PolishedStone[]   @relation("PolishedStoneBuyer")
+
+  @@index([roles], type: Gin)
+}
+
+enum PartyRoleType {
+  VENDOR
+  KARIGAR
+  JOB_WORKER
+  CUSTOMER
+  BROKER
 }
 
 model Transaction {
@@ -418,4 +513,119 @@ model Transaction {
   @@index([productId])
   @@index([createdAt])
   @@index([partyId])
+}
+
+// ─── ERP foundation ─────────────────────────────────────────────────────────
+
+// A factory department (Planning, Sawing, Polishing, ...). Operators are
+// limited to issue/return in the departments they're assigned to.
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  stages     ProcessStage[]
+  users      UserDepartment[]
+  stonesHere Product[]
+}
+
+model UserDepartment {
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  departmentId String
+
+  @@id([userId, departmentId])
+  @@index([departmentId])
+}
+
+// Admin-editable process stages — the configurable successor to the
+// hardcoded ProcessName enum. Stages that existed as enum values carry it in
+// `legacyProcess`, which is how old movements map onto them.
+model ProcessStage {
+  id                  String       @id @default(cuid())
+  code                String       @unique
+  name                String
+  sortOrder           Int          @default(0)
+  department          Department?  @relation(fields: [departmentId], references: [id])
+  departmentId        String?
+  legacyProcess       ProcessName? @unique
+  defaultLossLimitPct Decimal?     @db.Decimal(7, 3)
+  isLabourBillable    Boolean      @default(true)
+  active              Boolean      @default(true)
+  createdAt           DateTime     @default(now())
+
+  stonesHere Product[]
+
+  @@index([departmentId])
+}
+
+// Append-only timeline of everything that happened to a stone — the source
+// for the per-stone history view. Never updated in place.
+model StoneEvent {
+  id           String   @id @default(cuid())
+  stone        Product  @relation(fields: [stoneId], references: [id], onDelete: Cascade)
+  stoneId      String
+  at           DateTime @default(now())
+  type         String
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId       String?
+  party        Party?   @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  partyId      String?
+  weightBefore Decimal? @db.Decimal(12, 3)
+  weightAfter  Decimal? @db.Decimal(12, 3)
+  refType      String?
+  refId        String?
+  summary      String?
+  data         Json?
+  createdAt    DateTime @default(now())
+
+  @@index([stoneId, at])
+  @@index([type, at])
+  @@index([refType, refId])
+}
+
+// Who changed what, when — old → new values for every write.
+model AuditLog {
+  id       String   @id @default(cuid())
+  at       DateTime @default(now())
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId   String?
+  action   String
+  entity   String
+  entityId String?
+  before   Json?
+  after    Json?
+
+  @@index([entity, entityId])
+  @@index([at])
+  @@index([userId, at])
+}
+
+// Race-safe running numbers for documents (memo, stock ID, invoice, ...).
+model Counter {
+  key   String @id
+  value Int    @default(0)
+}
+
+// Any uploaded file, attached to any record (invoice, KP certificate, plan
+// file, breakage photo, certificate PDF, stone media, karigar photo).
+model Attachment {
+  id           String    @id @default(cuid())
+  entityType   String
+  entityId     String
+  kind         String
+  url          String
+  thumbUrl     String?
+  fileName     String?
+  mime         String
+  sizeBytes    Int
+  uploadedBy   User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedById String?
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  @@index([entityType, entityId])
 }

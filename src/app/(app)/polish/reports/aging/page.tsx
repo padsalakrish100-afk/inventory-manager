@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { POLISH_STATUS_LABELS, POLISH_STATUS_STYLES, daysInStock } from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
 import { ExportButtons } from "@/components/export-buttons";
 
 export default async function StockAgingReportPage() {
+  await requirePagePermission("stock.view");
   const stones = await prisma.polishedStone.findMany({
     where: { status: { not: "SOLD" } },
   });

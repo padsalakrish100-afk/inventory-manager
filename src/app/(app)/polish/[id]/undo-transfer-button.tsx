@@ -20,7 +20,7 @@ export function UndoTransferButton({ polishedStoneId }: { polishedStoneId: strin
           startTransition(async () => {
             try {
               const sourceProductId = await undoTransfer(polishedStoneId);
-              router.push(`/manufacturing/stone/${sourceProductId}`);
+              router.push(`/stones/${sourceProductId}`);
             } catch (err) {
               setError(err instanceof Error ? err.message : "Failed to undo transfer.");
             }

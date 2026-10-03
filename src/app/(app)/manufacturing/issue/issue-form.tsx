@@ -1,9 +1,11 @@
 "use client";
 
-import { Fragment, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { issueStones } from "../actions";
-import { PROCESS_OPTIONS, PROCESS_LABELS } from "@/lib/process";
+import { PROCESS_LABELS } from "@/lib/process";
+import { parseScannedCode } from "@/lib/stone/scan";
+import { todayIST } from "@/lib/dates";
 
 type Rate = { partyName: string; process: string; ratePerCarat: number };
 
@@ -16,17 +18,32 @@ type Row = {
   completedProcesses: string[];
 };
 
-export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: Rate[] }) {
+export function IssueForm({
+  partyNames,
+  rates,
+  processOptions,
+  showLabour,
+  initialSku,
+}: {
+  partyNames: string[];
+  rates: Rate[];
+  // Only the processes this user may issue to (operators: their departments).
+  processOptions: { value: string; label: string }[];
+  // Labour cost is a cost — hidden (and worked out on the server) for people
+  // who can't see costs.
+  showLabour: boolean;
+  initialSku?: string;
+}) {
   const [rows, setRows] = useState<Row[]>([]);
   const [scanValue, setScanValue] = useState("");
-  const [process, setProcess] = useState(PROCESS_OPTIONS[0].value);
+  const [process, setProcess] = useState(processOptions[0]?.value ?? "");
   const [party, setParty] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const scanRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIST();
 
   function currentRate(partyName: string, proc: string): number | null {
     return rates.find((r) => r.partyName === partyName && r.process === proc)?.ratePerCarat ?? null;
@@ -40,8 +57,8 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
     return { ...row, laborCost: (rate * weight).toFixed(2) };
   }
 
-  async function addScan() {
-    const sku = scanValue.trim();
+  async function addScan(raw: string = scanValue) {
+    const sku = parseScannedCode(raw);
     if (!sku) return;
     setScanValue("");
     if (rows.some((r) => r.sku === sku)) return;
@@ -71,6 +88,17 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
       ),
     ]);
   }
+
+  // Opened from a stone's page ("Issue" quick action): start with that stone.
+  const initialAdded = useRef(false);
+  useEffect(() => {
+    if (initialSku && !initialAdded.current) {
+      initialAdded.current = true;
+      void addScan(initialSku);
+    }
+    // Runs once for the stone passed in the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSku]);
 
   function removeRow(sku: string) {
     setRows((prev) => prev.filter((r) => r.sku !== sku));
@@ -150,7 +178,7 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
             onChange={(e) => changeProcess(e.target.value)}
             className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
           >
-            {PROCESS_OPTIONS.map((p) => (
+            {processOptions.map((p) => (
               <option key={p.value} value={p.value}>
                 {p.label}
               </option>
@@ -176,7 +204,7 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
               <option key={name} value={name} />
             ))}
           </datalist>
-          {party && currentRate(party, process) !== null && (
+          {showLabour && party && currentRate(party, process) !== null && (
             <p className="mt-1 text-xs text-zinc-500">
               Current rate: ₹{currentRate(party, process)!.toFixed(2)}/ct for {PROCESS_LABELS[process]}
             </p>
@@ -241,14 +269,14 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
               <th className="px-4 py-2 font-medium">#</th>
               <th className="px-4 py-2 font-medium">Stone number</th>
               <th className="px-4 py-2 font-medium">Weight (ct)</th>
-              <th className="px-4 py-2 font-medium">Labor cost (₹)</th>
+              {showLabour && <th className="px-4 py-2 font-medium">Labor cost (₹)</th>}
               <th className="px-4 py-2 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={showLabour ? 5 : 4} className="px-4 py-6 text-center text-zinc-500">
                   No stones scanned yet.
                 </td>
               </tr>
@@ -263,23 +291,27 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
                     <td className="px-4 py-2">
                       <input
                         type="number"
+                        inputMode="decimal"
                         min={0}
-                        step="0.01"
+                        step="0.001"
                         value={r.weight}
                         onChange={(e) => updateWeight(r.sku, e.target.value)}
-                        className="w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm"
+                        className="min-h-10 w-24 rounded-md border border-zinc-300 px-2 py-1 text-base sm:text-sm"
                       />
                     </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={r.laborCost}
-                        onChange={(e) => updateLaborCost(r.sku, e.target.value)}
-                        className="w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm"
-                      />
-                    </td>
+                    {showLabour && (
+                      <td className="px-4 py-2">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="0.01"
+                          value={r.laborCost}
+                          onChange={(e) => updateLaborCost(r.sku, e.target.value)}
+                          className="min-h-10 w-24 rounded-md border border-zinc-300 px-2 py-1 text-base sm:text-sm"
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-2 text-right">
                       <button
                         type="button"
@@ -293,7 +325,7 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
                   {isReissue && (
                     <tr className="border-b border-zinc-100 last:border-0 bg-amber-50">
                       <td></td>
-                      <td colSpan={4} className="px-4 pb-2">
+                      <td colSpan={showLabour ? 4 : 3} className="px-4 pb-2">
                         <label className="block text-xs font-medium text-amber-700">
                           Already completed {PROCESS_LABELS[process]} before — why is it going again?
                         </label>
@@ -317,8 +349,8 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
                 <td colSpan={2} className="px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
                   {rows.length} stone{rows.length === 1 ? "" : "s"}
                 </td>
-                <td className="px-4 py-2 font-medium text-zinc-900">{totalWeight.toFixed(2)} ct</td>
-                <td className="px-4 py-2 font-medium text-zinc-900">₹{totalLaborCost.toFixed(2)}</td>
+                <td className="px-4 py-2 font-medium text-zinc-900">{totalWeight.toFixed(3)} ct</td>
+                {showLabour && <td className="px-4 py-2 font-medium text-zinc-900">₹{totalLaborCost.toFixed(2)}</td>}
                 <td></td>
               </tr>
             </tfoot>
@@ -330,8 +362,8 @@ export function IssueForm({ partyNames, rates }: { partyNames: string[]; rates: 
 
       <button
         type="submit"
-        disabled={isPending || rows.length === 0}
-        className="w-full rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-60"
+        disabled={isPending || rows.length === 0 || !process}
+        className="min-h-12 w-full rounded-md bg-[var(--accent)] px-4 py-3 text-base font-medium text-white hover:brightness-110 disabled:opacity-60"
       >
         {isPending ? "Issuing..." : `Issue ${rows.length || ""} stone${rows.length === 1 ? "" : "s"} & print memo`}
       </button>

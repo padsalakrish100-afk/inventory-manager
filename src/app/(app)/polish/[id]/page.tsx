@@ -7,8 +7,13 @@ import { BarcodeLabel, PrintLabelButton } from "@/components/barcode-label";
 import { UndoTransferButton } from "./undo-transfer-button";
 import { POLISH_STATUS_LABELS, POLISH_STATUS_STYLES } from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
+import { can, requirePagePermission } from "@/lib/authz";
+import { formatDate } from "@/lib/dates";
 
 export default async function PolishedStoneDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const viewer = await requirePagePermission("stock.view");
+  const canEdit = can(viewer, "stock.edit");
+  const showCosts = can(viewer, "costs.view");
   const { id } = await params;
   const [polished, parties] = await Promise.all([
     prisma.polishedStone.findUnique({
@@ -29,7 +34,7 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
       },
     }),
     prisma.party.findMany({
-      where: { category: "CUSTOMER", active: true },
+      where: { roles: { has: "CUSTOMER" }, active: true },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -81,10 +86,13 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
         <div className="flex items-center gap-4">
           <BarcodeLabel sku={polished.stockId} name={polished.shape ?? "Polished stone"} caratWeight={polished.caratWeight} />
           <PrintLabelButton />
-          <UndoTransferButton polishedStoneId={polished.id} />
+          {can(viewer, "stones.edit") && <UndoTransferButton polishedStoneId={polished.id} />}
         </div>
       </div>
 
+      {/* A disabled fieldset makes every field and button inside read-only
+          for people who may view stock but not change it. */}
+      <fieldset disabled={!canEdit} className="contents">
       <EditPolishedStoneForm
         id={polished.id}
         defaults={{
@@ -106,9 +114,10 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
       />
 
       <section className="flex max-w-2xl flex-col gap-4">
-        <h2 className="text-lg font-semibold text-zinc-900">Sales &amp; cost</h2>
+        <h2 className="text-lg font-semibold text-zinc-900">{showCosts ? "Sales & cost" : "Sales"}</h2>
         <SaleForm
           id={polished.id}
+          showCosts={showCosts}
           buyerNames={parties.map((p) => p.name)}
           defaults={{
             status: polished.status,
@@ -119,14 +128,16 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
             soldPrice: polished.soldPrice,
             soldDate: polished.soldDate ? polished.soldDate.toISOString().slice(0, 10) : null,
             paymentStatus: polished.paymentStatus,
-            roughCostAlloc: polished.roughCostAlloc ?? roughCostSuggestion,
-            laborCost: polished.laborCost ?? (laborCostSum > 0 ? laborCostSum : null),
-            certCost: polished.certCost,
-            otherCost: polished.otherCost,
+            // Never sent to the browser for people who can't see costs.
+            roughCostAlloc: showCosts ? (polished.roughCostAlloc ?? roughCostSuggestion) : null,
+            laborCost: showCosts ? (polished.laborCost ?? (laborCostSum > 0 ? laborCostSum : null)) : null,
+            certCost: showCosts ? polished.certCost : null,
+            otherCost: showCosts ? polished.otherCost : null,
           }}
-          costHints={{ roughCostAlloc: roughCostHint, laborCost: laborCostHint }}
+          costHints={showCosts ? { roughCostAlloc: roughCostHint, laborCost: laborCostHint } : undefined}
         />
       </section>
+      </fieldset>
 
       <section className="flex max-w-2xl flex-col gap-3">
         <h2 className="text-lg font-semibold text-zinc-900">History &amp; traceability</h2>
@@ -135,7 +146,7 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
             <div>
               <dt className="text-zinc-500">Manufacturing stone number</dt>
               <dd className="mt-0.5">
-                <Link href={`/manufacturing/stone/${source.id}`} className="font-mono text-xs font-medium text-zinc-900 hover:underline">
+                <Link href={`/stones/${source.id}`} className="font-mono text-xs font-medium text-zinc-900 hover:underline">
                   {source.sku}
                 </Link>
               </dd>
@@ -178,9 +189,9 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
                     <tr key={m.id} className="border-b border-zinc-100 last:border-0">
                       <td className="py-2 text-zinc-800">{m.process}</td>
                       <td className="py-2 text-zinc-500">{m.party?.name ?? "—"}</td>
-                      <td className="py-2 text-zinc-500">{m.issueDate.toLocaleDateString()}</td>
+                      <td className="py-2 text-zinc-500">{formatDate(m.issueDate)}</td>
                       <td className="py-2 text-zinc-500">
-                        {m.returnDate ? m.returnDate.toLocaleDateString() : "—"}
+                        {formatDate(m.returnDate)}
                       </td>
                     </tr>
                   ))}

@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { POLISH_STATUS_OPTIONS, POLISH_STATUS_LABELS, daysInStock } from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
 
 export default async function PolishSummaryPage() {
+  await requirePagePermission("stock.view");
   const stones = await prisma.polishedStone.findMany();
 
   const countByStatus = new Map<string, number>();
@@ -44,7 +46,7 @@ export default async function PolishSummaryPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">Polish summary</h1>
-          <p className="mt-1 text-sm text-zinc-500">Inventory, sales, and what's been sitting longest.</p>
+          <p className="mt-1 text-sm text-zinc-500">Inventory, sales, and what&apos;s been sitting longest.</p>
         </div>
         <Link href="/polish" className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">
           Back to list

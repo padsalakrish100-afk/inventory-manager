@@ -5,8 +5,12 @@ import { PROCESS_LABELS, PROCESS_STYLES } from "@/lib/process";
 import { DeleteLotButton } from "./delete-lot-button";
 import { WeightCell } from "./weight-cell";
 import { PurchaseCostEditor } from "./purchase-cost-editor";
+import { can, requirePagePermission } from "@/lib/authz";
+import { formatDate } from "@/lib/dates";
 
 export default async function LotDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const viewer = await requirePagePermission("lots.manage");
+  const showCost = can(viewer, "costs.view");
   const { id } = await params;
   const lot = await prisma.lot.findUnique({
     where: { id },
@@ -24,10 +28,10 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
   const polishedCount = lot.products.filter((p) => p.polishedStone).length;
 
   const weighedStones = lot.products.filter((p) => p.caratWeight !== null);
-  const enteredTotal = Math.round(weighedStones.reduce((sum, p) => sum + (p.caratWeight ?? 0), 0) * 100) / 100;
+  const enteredTotal = Math.round(weighedStones.reduce((sum, p) => sum + (p.caratWeight ?? 0), 0) * 1000) / 1000;
   const allWeighed = weighedStones.length === lot.products.length && lot.products.length > 0;
   const showVarianceCheck = lot.roughWeight !== null && weighedStones.length > 0;
-  const diff = showVarianceCheck ? Math.round((enteredTotal - lot.roughWeight!) * 100) / 100 : 0;
+  const diff = showVarianceCheck ? Math.round((enteredTotal - lot.roughWeight!) * 1000) / 1000 : 0;
   const diffPercent = showVarianceCheck && lot.roughWeight ? (diff / lot.roughWeight) * 100 : 0;
   const flagged = showVarianceCheck && allWeighed && Math.abs(diffPercent) > 2;
 
@@ -39,9 +43,13 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-zinc-500">
             <span>Source: {lot.sourceParty?.name ?? "—"}</span>
             <span>&middot; Rough weight: {lot.roughWeight ?? "—"} ct</span>
-            <span>&middot; Purchase cost:</span>
-            <PurchaseCostEditor lotId={lot.id} initialCost={lot.purchaseCost} roughWeight={lot.roughWeight} />
-            <span>&middot; {lot.createdAt.toLocaleDateString()}</span>
+            {showCost && (
+              <>
+                <span>&middot; Purchase cost:</span>
+                <PurchaseCostEditor lotId={lot.id} initialCost={lot.purchaseCost} roughWeight={lot.roughWeight} />
+              </>
+            )}
+            <span>&middot; {formatDate(lot.createdAt)}</span>
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -119,7 +127,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <Link href={`/manufacturing/stone/${p.id}`} className="text-zinc-600 hover:underline">
+                  <Link href={`/stones/${p.id}`} className="text-zinc-600 hover:underline">
                     Details
                   </Link>
                 </td>

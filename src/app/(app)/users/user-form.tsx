@@ -1,13 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
+import { useFormAction } from "@/lib/use-form-action";
 import { createUser } from "./actions";
+import { AccessFields } from "./access-fields";
 
-export function UserForm() {
-  const [error, formAction, pending] = useActionState(createUser, undefined);
+export function UserForm({ departments }: { departments: { id: string; name: string }[] }) {
+  const [error, onSubmit, pending] = useFormAction(createUser, undefined, { resetOnSuccess: true });
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <div>
         <label htmlFor="name" className="block text-sm font-medium text-zinc-700">
           Name
@@ -34,7 +35,7 @@ export function UserForm() {
           placeholder="e.g. priya.staff"
           className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
         />
-        <p className="mt-1 text-xs text-zinc-500">What they'll type to sign in. Lowercase letters, numbers, dots, underscores, or hyphens.</p>
+        <p className="mt-1 text-xs text-zinc-500">What they&apos;ll type to sign in. Lowercase letters, numbers, dots, underscores, or hyphens.</p>
       </div>
 
       <div>
@@ -65,20 +66,7 @@ export function UserForm() {
         <p className="mt-1 text-xs text-zinc-500">At least 8 characters. Share this with the user directly.</p>
       </div>
 
-      <div>
-        <label htmlFor="role" className="block text-sm font-medium text-zinc-700">
-          Role
-        </label>
-        <select
-          id="role"
-          name="role"
-          defaultValue="STAFF"
-          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-        >
-          <option value="STAFF">Staff</option>
-          <option value="ADMIN">Admin</option>
-        </select>
-      </div>
+      <AccessFields departments={departments} defaults={{ role: "MANAGER", canSeeCosts: false, departmentIds: [] }} />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

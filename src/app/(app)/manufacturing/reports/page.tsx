@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { PROCESS_LABELS, PROCESS_STYLES, PROCESS_OPTIONS } from "@/lib/process";
 import { ExportButtons } from "@/components/export-buttons";
@@ -8,6 +9,7 @@ export default async function ManufacturingReportsPage({
 }: {
   searchParams: Promise<{ reworkedOnly?: string; sort?: string }>;
 }) {
+  await requirePagePermission("mfg.reports");
   const { reworkedOnly, sort } = await searchParams;
   const [lots, stones] = await Promise.all([
     prisma.lot.findMany({
@@ -68,7 +70,7 @@ export default async function ManufacturingReportsPage({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">Manufacturing reports</h1>
-          <p className="mt-1 text-sm text-zinc-500">Whole-lot summary and every stone's own detail.</p>
+          <p className="mt-1 text-sm text-zinc-500">Whole-lot summary and every stone&apos;s own detail.</p>
         </div>
         <ExportButtons
           report="manufacturing-reports"
@@ -127,8 +129,8 @@ export default async function ManufacturingReportsPage({
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold text-zinc-900">Yield by lot</h2>
         <p className="text-sm text-zinc-500">
-          Total polished weight produced so far against the lot's rough weight — a rough sense of
-          manufacturing efficiency. Yield only grows as more of the lot's stones reach Polish.
+          Total polished weight produced so far against the lot&apos;s rough weight — a rough sense of
+          manufacturing efficiency. Yield only grows as more of the lot&apos;s stones reach Polish.
         </p>
         <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
           <table className="w-full text-left text-sm">
@@ -284,7 +286,7 @@ export default async function ManufacturingReportsPage({
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link href={`/manufacturing/stone/${stone.id}`} className="text-zinc-600 hover:underline">
+                    <Link href={`/stones/${stone.id}`} className="text-zinc-600 hover:underline">
                       Details
                     </Link>
                   </td>

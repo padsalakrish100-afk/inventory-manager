@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth, signOut } from "@/auth";
+import { signOut } from "@/auth";
 import { getSettings } from "@/lib/settings";
+import { can, getViewer, ROLE_LABELS, type Permission } from "@/lib/authz";
 
-const navItems = [
-  { href: "/lotting", label: "Lotting" },
-  { href: "/manufacturing", label: "Manufacturing" },
-  { href: "/polish", label: "Polish" },
+const navItems: { href: string; label: string; permission: Permission }[] = [
+  { href: "/stones", label: "Stones", permission: "stones.view" },
+  { href: "/lotting", label: "Lotting", permission: "lots.manage" },
+  { href: "/manufacturing", label: "Manufacturing", permission: "mfg.view" },
+  { href: "/polish", label: "Polish", permission: "stock.view" },
+  { href: "/settings", label: "Settings", permission: "admin" },
 ];
 
 export default async function AppLayout({
@@ -14,46 +17,51 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
-  if (!session?.user) {
+  const viewer = await getViewer();
+  if (!viewer) {
     redirect("/login");
   }
 
-  const isAdmin = session.user.role === "ADMIN";
   const { appName } = await getSettings();
+  const visibleItems = navItems.filter((item) => can(viewer, item.permission));
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="flex flex-wrap items-center gap-6">
-            <span className="shrink-0 whitespace-nowrap font-semibold text-[var(--accent)]">{appName}</span>
-            <nav className="flex flex-wrap gap-4 text-sm">
-              {navItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="whitespace-nowrap text-zinc-600 hover:text-zinc-900"
-                >
-                  {item.label}
-                </Link>
-              ))}
-              {isAdmin && (
-                <Link href="/settings/parties" className="whitespace-nowrap text-zinc-600 hover:text-zinc-900">
-                  Parties
-                </Link>
-              )}
-              {isAdmin && (
-                <Link href="/users" className="whitespace-nowrap text-zinc-600 hover:text-zinc-900">
-                  Users
-                </Link>
-              )}
-            </nav>
+      <header className="border-b border-zinc-200 bg-white print:hidden">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/" className="shrink-0 whitespace-nowrap font-semibold text-[var(--accent)]">
+              {appName}
+            </Link>
+            <div className="flex items-center gap-2 text-sm text-zinc-600 sm:hidden">
+              <Link href="/account" className="max-w-[9rem] truncate hover:underline">
+                {viewer.name}
+              </Link>
+            </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-3 text-sm text-zinc-600">
+          {/* Scrolls sideways on a phone instead of wrapping. */}
+          <nav className="-mx-4 flex gap-1 overflow-x-auto px-4 text-sm [scrollbar-width:none] sm:mx-0 sm:flex-1 sm:px-0 sm:pl-4 [&::-webkit-scrollbar]:hidden">
+            <Link
+              href="/scan"
+              className="flex min-h-10 items-center whitespace-nowrap rounded-md bg-[var(--accent)] px-3 font-medium text-white hover:brightness-110"
+            >
+              Scan
+            </Link>
+            {visibleItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex min-h-10 items-center whitespace-nowrap rounded-md px-3 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+
+          <div className="hidden shrink-0 items-center gap-3 text-sm text-zinc-600 sm:flex">
             <Link href="/account" className="whitespace-nowrap hover:text-zinc-900 hover:underline">
-              {session.user.name} ({session.user.role})
+              {viewer.name} ({ROLE_LABELS[viewer.role]})
             </Link>
             <form
               action={async () => {
@@ -72,7 +80,7 @@ export default async function AppLayout({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">{children}</main>
     </div>
   );
 }

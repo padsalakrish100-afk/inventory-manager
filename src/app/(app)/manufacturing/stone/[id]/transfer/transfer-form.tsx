@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useFormAction } from "@/lib/use-form-action";
+import { useState } from "react";
 import { transferToPolish } from "../../../actions";
 
 const SHAPES = [
@@ -22,11 +23,11 @@ const FLUORESCENCE = ["None", "Faint", "Medium", "Strong", "Very Strong"];
 
 export function TransferForm({ productId, defaultCaratWeight }: { productId: string; defaultCaratWeight: number | null }) {
   const boundAction = transferToPolish.bind(null, productId);
-  const [error, formAction, pending] = useActionState(boundAction, undefined);
+  const [error, onSubmit, pending] = useFormAction(boundAction, undefined);
   const [certified, setCertified] = useState(false);
 
   return (
-    <form action={formAction} className="flex max-w-2xl flex-col gap-6">
+    <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-6">
       <fieldset className="flex flex-col gap-4 border-0 p-0">
         <legend className="mb-1 w-full border-b border-zinc-200 pb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
           Certification
@@ -59,7 +60,7 @@ export function TransferForm({ productId, defaultCaratWeight }: { productId: str
             label="Carat weight"
             name="caratWeight"
             type="number"
-            step="0.01"
+            step="0.001"
             min={0}
             defaultValue={defaultCaratWeight ?? undefined}
           />

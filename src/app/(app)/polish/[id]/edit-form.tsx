@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useFormAction } from "@/lib/use-form-action";
+import { useState } from "react";
 import { updatePolishedStone } from "../actions";
 import { SALE_TYPE_OPTIONS } from "@/lib/polish-status";
 
@@ -40,11 +41,11 @@ type Defaults = {
 
 export function EditPolishedStoneForm({ id, defaults }: { id: string; defaults: Defaults }) {
   const boundAction = updatePolishedStone.bind(null, id);
-  const [error, formAction, pending] = useActionState(boundAction, undefined);
+  const [error, onSubmit, pending] = useFormAction(boundAction, undefined);
   const [certified, setCertified] = useState(defaults.certified);
 
   return (
-    <form action={formAction} className="flex max-w-2xl flex-col gap-6">
+    <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-6">
       <fieldset className="flex flex-col gap-4 border-0 p-0">
         <legend className="mb-1 w-full border-b border-zinc-200 pb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
           Certification
@@ -83,7 +84,7 @@ export function EditPolishedStoneForm({ id, defaults }: { id: string; defaults: 
             ))}
           </select>
           <p className="mt-1 text-xs text-zinc-500">
-            How it's actually sold — a certified stone can still go out in a loose parcel rather
+            How it&apos;s actually sold — a certified stone can still go out in a loose parcel rather
             than being marketed on its own.
           </p>
         </div>
@@ -99,7 +100,7 @@ export function EditPolishedStoneForm({ id, defaults }: { id: string; defaults: 
             label="Carat weight"
             name="caratWeight"
             type="number"
-            step="0.01"
+            step="0.001"
             min={0}
             defaultValue={defaults.caratWeight ?? undefined}
           />

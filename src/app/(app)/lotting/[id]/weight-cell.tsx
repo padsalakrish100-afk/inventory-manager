@@ -27,7 +27,7 @@ export function WeightCell({ productId, initialWeight }: { productId: string; in
       <input
         type="number"
         min={0}
-        step="0.01"
+        step="0.001"
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={save}

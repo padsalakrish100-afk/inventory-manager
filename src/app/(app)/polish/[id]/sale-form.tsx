@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useFormAction } from "@/lib/use-form-action";
+import { useState } from "react";
 import { updateSaleInfo } from "../actions";
 import { POLISH_STATUS_OPTIONS, PAYMENT_STATUS_OPTIONS, computeTotalCost } from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
@@ -30,14 +31,18 @@ export function SaleForm({
   defaults,
   buyerNames,
   costHints,
+  showCosts,
 }: {
   id: string;
   defaults: Defaults;
   buyerNames: string[];
   costHints?: CostHints;
+  // Cost fields (and margin) are only rendered for people allowed to see
+  // costs; the server ignores them from anyone else.
+  showCosts: boolean;
 }) {
   const boundAction = updateSaleInfo.bind(null, id);
-  const [error, formAction, pending] = useActionState(boundAction, undefined);
+  const [error, onSubmit, pending] = useFormAction(boundAction, undefined);
   const [status, setStatus] = useState(defaults.status);
   const [currency, setCurrency] = useState(defaults.currency);
 
@@ -53,7 +58,7 @@ export function SaleForm({
   const margin = soldPrice !== null ? soldPrice - totalCost : null;
 
   return (
-    <form action={formAction} className="flex max-w-2xl flex-col gap-6">
+    <form onSubmit={onSubmit} className="flex max-w-2xl flex-col gap-6">
       <fieldset className="flex flex-col gap-4 border-0 p-0">
         <legend className="mb-1 w-full border-b border-zinc-200 pb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
           Status &amp; listing
@@ -201,6 +206,7 @@ export function SaleForm({
         </fieldset>
       )}
 
+      {showCosts && (
       <fieldset className="flex flex-col gap-4 border-0 p-0">
         <legend className="mb-1 w-full border-b border-zinc-200 pb-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
           Cost breakdown
@@ -253,6 +259,7 @@ export function SaleForm({
           </div>
         )}
       </fieldset>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

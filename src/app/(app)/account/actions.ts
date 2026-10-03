@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { writeAudit } from "@/lib/audit";
 
 export type ChangePasswordResult = { error?: string; success?: boolean };
 
@@ -29,7 +30,16 @@ export async function changePassword(
   if (!valid) return { error: "Current password is incorrect." };
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
+    await writeAudit(tx, user.id, {
+      action: "UPDATE",
+      entity: "User",
+      entityId: user.id,
+      before: { password: "[previous]" },
+      after: { password: "[changed by user]" },
+    });
+  });
 
   return { success: true };
 }

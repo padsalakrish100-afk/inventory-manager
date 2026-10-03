@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { PROCESS_OPTIONS, PROCESS_STYLES } from "@/lib/process";
 import { StoneLookupForm } from "./stone-lookup-form";
 
 export default async function ManufacturingPage() {
+  await requirePagePermission("mfg.view");
   const [stonesOut, inHandCount, polishedCount] = await Promise.all([
     prisma.product.findMany({
       where: { currentProcess: { not: null } },
@@ -118,7 +120,7 @@ export default async function ManufacturingPage() {
                 <td className="px-4 py-3 text-zinc-800">{stone.currentParty?.name ?? "—"}</td>
                 <td className="px-4 py-3 text-zinc-500">{stone.caratWeight ?? "—"}</td>
                 <td className="px-4 py-3 text-right">
-                  <Link href={`/manufacturing/stone/${stone.id}`} className="text-zinc-600 hover:underline">
+                  <Link href={`/stones/${stone.id}`} className="text-zinc-600 hover:underline">
                     Details
                   </Link>
                 </td>

@@ -1,8 +1,10 @@
 "use client";
 
-import { Fragment, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition } from "react";
 import { returnStones } from "../actions";
 import { PROCESS_LABELS, SAWING_PROCESS_VALUES } from "@/lib/process";
+import { parseScannedCode } from "@/lib/stone/scan";
+import { todayIST } from "@/lib/dates";
 
 type StoneInfo = {
   sku: string;
@@ -21,10 +23,10 @@ function recomputeWeightFromTops(row: StoneInfo): StoneInfo {
   const isSawing = row.process && (SAWING_PROCESS_VALUES as readonly string[]).includes(row.process);
   if (!isSawing || row.topsEntries.length === 0 || row.startingWeight === null) return row;
   const remaining = row.startingWeight - sumTops(row.topsEntries);
-  return { ...row, weight: (remaining >= 0 ? remaining : 0).toFixed(2) };
+  return { ...row, weight: (remaining >= 0 ? remaining : 0).toFixed(3) };
 }
 
-export function ReturnForm() {
+export function ReturnForm({ initialSku }: { initialSku?: string }) {
   const [rows, setRows] = useState<StoneInfo[]>([]);
   const [scanValue, setScanValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +34,10 @@ export function ReturnForm() {
   const [isPending, startTransition] = useTransition();
   const scanRef = useRef<HTMLInputElement>(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIST();
 
-  async function addScan() {
-    const sku = scanValue.trim();
+  async function addScan(raw: string = scanValue) {
+    const sku = parseScannedCode(raw);
     if (!sku) return;
     setScanValue("");
     setError(null);
@@ -54,6 +56,17 @@ export function ReturnForm() {
       { sku, weight, process: info.process, party: info.party, startingWeight, topsEntries: [] },
     ]);
   }
+
+  // Opened from a stone's page ("Return" quick action): start with that stone.
+  const initialAdded = useRef(false);
+  useEffect(() => {
+    if (initialSku && !initialAdded.current) {
+      initialAdded.current = true;
+      void addScan(initialSku);
+    }
+    // Runs once for the stone passed in the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSku]);
 
   function removeRow(sku: string) {
     setRows((prev) => prev.filter((r) => r.sku !== sku));
@@ -202,7 +215,7 @@ export function ReturnForm() {
                       <input
                         type="number"
                         min={0}
-                        step="0.01"
+                        step="0.001"
                         value={r.weight}
                         onChange={(e) => updateWeight(r.sku, e.target.value)}
                         className="w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm"
@@ -232,7 +245,7 @@ export function ReturnForm() {
                               <input
                                 type="number"
                                 min={0}
-                                step="0.01"
+                                step="0.001"
                                 value={v}
                                 onChange={(e) => updateTopsEntry(r.sku, idx, e.target.value)}
                                 placeholder="ct"
@@ -256,7 +269,7 @@ export function ReturnForm() {
                           </button>
                           {r.topsEntries.length > 0 && (
                             <p className="mt-1 text-xs text-blue-700">
-                              {r.startingWeight ?? 0} ct − {sumTops(r.topsEntries).toFixed(2)} ct tops ={" "}
+                              {r.startingWeight ?? 0} ct − {sumTops(r.topsEntries).toFixed(3)} ct tops ={" "}
                               <span className="font-medium">{r.weight} ct final</span>
                             </p>
                           )}

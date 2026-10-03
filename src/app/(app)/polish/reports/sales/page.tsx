@@ -3,12 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { PAYMENT_STATUS_LABELS, PAYMENT_STATUS_STYLES, computeTotalCost } from "@/lib/polish-status";
 import { formatMoney } from "@/lib/format";
 import { ExportButtons } from "@/components/export-buttons";
+import { can, requirePagePermission } from "@/lib/authz";
+import { formatDate } from "@/lib/dates";
 
 export default async function SalesReportPage({
   searchParams,
 }: {
   searchParams: Promise<{ from?: string; to?: string; buyerId?: string }>;
 }) {
+  const viewer = await requirePagePermission("sales.reports");
+  const showCosts = can(viewer, "costs.view");
   const { from, to, buyerId } = await searchParams;
 
   const fromDate = from ? new Date(from) : undefined;
@@ -68,7 +72,7 @@ export default async function SalesReportPage({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900">Sales report</h1>
-          <p className="mt-1 text-sm text-zinc-500">Sold stones, revenue, and margin.</p>
+          <p className="mt-1 text-sm text-zinc-500">Sold stones and revenue{showCosts ? ", with margin" : ""}.</p>
         </div>
         <div className="flex items-center gap-3">
           <ExportButtons report="polish-sales" params={exportParams} />
@@ -127,7 +131,7 @@ export default async function SalesReportPage({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <StatCard label="Total revenue" value={formatTotals(totalRevenue)} />
-        <StatCard label="Total margin" value={formatTotals(totalMargin)} />
+        {showCosts && <StatCard label="Total margin" value={formatTotals(totalMargin)} />}
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
@@ -138,15 +142,15 @@ export default async function SalesReportPage({
               <th className="px-4 py-3 font-medium">Buyer</th>
               <th className="px-4 py-3 font-medium">Sold date</th>
               <th className="px-4 py-3 font-medium">Sold price</th>
-              <th className="px-4 py-3 font-medium">Total cost</th>
-              <th className="px-4 py-3 font-medium">Margin</th>
+              {showCosts && <th className="px-4 py-3 font-medium">Total cost</th>}
+              {showCosts && <th className="px-4 py-3 font-medium">Margin</th>}
               <th className="px-4 py-3 font-medium">Payment</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={showCosts ? 7 : 5} className="px-4 py-6 text-center text-zinc-500">
                   {hasFilters ? (
                     <>
                       No sales match this filter.{" "}
@@ -170,15 +174,17 @@ export default async function SalesReportPage({
                 </td>
                 <td className="px-4 py-3 text-zinc-800">{stone.buyer?.name ?? "—"}</td>
                 <td className="px-4 py-3 text-zinc-500">
-                  {stone.soldDate ? stone.soldDate.toLocaleDateString() : "—"}
+                  {formatDate(stone.soldDate)}
                 </td>
                 <td className="px-4 py-3 text-zinc-800">
                   {stone.soldPrice !== null ? formatMoney(stone.soldPrice, stone.currency) : "—"}
                 </td>
-                <td className="px-4 py-3 text-zinc-500">{formatMoney(totalCost, stone.currency)}</td>
-                <td className={`px-4 py-3 font-medium ${margin !== null && margin < 0 ? "text-red-600" : "text-emerald-700"}`}>
-                  {margin !== null ? formatMoney(margin, stone.currency) : "—"}
-                </td>
+                {showCosts && <td className="px-4 py-3 text-zinc-500">{formatMoney(totalCost, stone.currency)}</td>}
+                {showCosts && (
+                  <td className={`px-4 py-3 font-medium ${margin !== null && margin < 0 ? "text-red-600" : "text-emerald-700"}`}>
+                    {margin !== null ? formatMoney(margin, stone.currency) : "—"}
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   {stone.paymentStatus ? (
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PAYMENT_STATUS_STYLES[stone.paymentStatus]}`}>

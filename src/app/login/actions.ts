@@ -11,7 +11,8 @@ export async function loginAction(
     await signIn("credentials", {
       username: formData.get("username"),
       password: formData.get("password"),
-      redirectTo: "/manufacturing",
+      // "/" sends each role to its own home page.
+      redirectTo: "/",
     });
   } catch (error) {
     if (error instanceof AuthError) {

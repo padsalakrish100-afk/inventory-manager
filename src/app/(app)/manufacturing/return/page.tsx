@@ -1,6 +1,10 @@
+import { requirePagePermission } from "@/lib/authz";
 import { ReturnForm } from "./return-form";
 
-export default function ReturnPage() {
+export default async function ReturnPage({ searchParams }: { searchParams: Promise<{ sku?: string }> }) {
+  await requirePagePermission("mfg.issueReturn");
+  const { sku } = await searchParams;
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -9,7 +13,7 @@ export default function ReturnPage() {
           Scan stones coming back from a karigar or vendor to free them up for the next step.
         </p>
       </div>
-      <ReturnForm />
+      <ReturnForm initialSku={sku} />
     </div>
   );
 }

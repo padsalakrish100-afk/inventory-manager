@@ -1,4 +1,6 @@
-import { auth } from "@/auth";
+import { can, getViewer, type Permission } from "@/lib/authz";
+import { writeAudit } from "@/lib/audit";
+import { formatDate } from "@/lib/dates";
 import { prisma } from "@/lib/prisma";
 import { buildExcelBuffer, excelResponse, type ExportColumn } from "@/lib/export/excel";
 import { buildPdfBuffer, pdfResponse, type PdfColumn } from "@/lib/export/pdf";
@@ -9,7 +11,21 @@ import type { PolishStatus } from "@/generated/prisma/client";
 
 type ReportResult = { title: string; subtitle?: string; columns: ExportColumn[]; rows: Record<string, string | number>[] };
 
-async function buildReport(report: string, searchParams: URLSearchParams): Promise<ReportResult | null> {
+// Which permission each export needs — the same as the page it comes from.
+const REPORT_PERMISSIONS: Record<string, Permission> = {
+  polish: "stock.view",
+  "polish-aging": "stock.view",
+  "polish-inventory-value": "stock.view",
+  "polish-sales": "sales.reports",
+  "manufacturing-reports": "mfg.reports",
+  lotting: "lots.manage",
+};
+
+async function buildReport(
+  report: string,
+  searchParams: URLSearchParams,
+  showCosts: boolean,
+): Promise<ReportResult | null> {
   switch (report) {
     case "polish": {
       const status = searchParams.get("status") ?? undefined;
@@ -133,8 +149,12 @@ async function buildReport(report: string, searchParams: URLSearchParams): Promi
           { header: "Buyer", key: "buyer" },
           { header: "Sold date", key: "soldDate" },
           { header: "Sold price", key: "soldPrice" },
-          { header: "Total cost", key: "totalCost" },
-          { header: "Margin", key: "margin" },
+          ...(showCosts
+            ? [
+                { header: "Total cost", key: "totalCost" },
+                { header: "Margin", key: "margin" },
+              ]
+            : []),
           { header: "Payment", key: "payment" },
         ],
         rows: stones.map((p) => {
@@ -143,10 +163,14 @@ async function buildReport(report: string, searchParams: URLSearchParams): Promi
           return {
             stockId: p.stockId,
             buyer: p.buyer?.name ?? "",
-            soldDate: p.soldDate ? p.soldDate.toLocaleDateString() : "",
+            soldDate: p.soldDate ? formatDate(p.soldDate) : "",
             soldPrice: p.soldPrice !== null ? formatMoney(p.soldPrice, p.currency) : "",
-            totalCost: formatMoney(totalCost, p.currency),
-            margin: margin !== null ? formatMoney(margin, p.currency) : "",
+            ...(showCosts
+              ? {
+                  totalCost: formatMoney(totalCost, p.currency),
+                  margin: margin !== null ? formatMoney(margin, p.currency) : "",
+                }
+              : {}),
             payment: p.paymentStatus ? PAYMENT_STATUS_LABELS[p.paymentStatus] : "",
           };
         }),
@@ -213,7 +237,7 @@ async function buildReport(report: string, searchParams: URLSearchParams): Promi
           source: lot.sourceParty?.name ?? "",
           roughWeight: lot.roughWeight ?? "",
           stones: lot._count.products,
-          date: lot.createdAt.toLocaleDateString(),
+          date: formatDate(lot.createdAt),
         })),
       };
     }
@@ -224,12 +248,15 @@ async function buildReport(report: string, searchParams: URLSearchParams): Promi
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ report: string }> }) {
-  const session = await auth();
-  if (!session?.user) {
+  const viewer = await getViewer();
+  if (!viewer) {
     return new Response("Unauthorized", { status: 401 });
   }
 
   const { report } = await params;
+  const permission = REPORT_PERMISSIONS[report];
+  if (!permission) return new Response("Unknown report", { status: 404 });
+  if (!can(viewer, permission)) return new Response("Forbidden", { status: 403 });
   const { searchParams } = new URL(request.url);
   const format = searchParams.get("format");
 
@@ -237,10 +264,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ repo
     return new Response("Invalid format — use ?format=xlsx or ?format=pdf", { status: 400 });
   }
 
-  const data = await buildReport(report, searchParams);
+  const data = await buildReport(report, searchParams, can(viewer, "costs.view"));
   if (!data) {
     return new Response("Unknown report", { status: 404 });
   }
+  await writeAudit(prisma, viewer.id, {
+    action: "EXPORT",
+    entity: "Report",
+    entityId: report,
+    after: { format, rows: data.rows.length, filters: Object.fromEntries(searchParams) },
+  });
 
   const dateStamp = new Date().toISOString().slice(0, 10);
   const baseName = `${report}-${dateStamp}`;
