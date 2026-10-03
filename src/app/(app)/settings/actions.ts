@@ -200,6 +200,41 @@ export async function deleteLossLimit(limitId: string) {
   revalidatePath("/settings/loss-limits");
 }
 
+const fxSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a date."),
+  usdInr: z
+    .string()
+    .trim()
+    .regex(/^\d{1,4}(\.\d{1,4})?$/, "Rate must be a number like 88.25 (up to 4 decimals)."),
+});
+
+// Sets the USD→INR rate for a date (replacing that day's rate if any).
+// Money entries copy the rate in force on their date when they're created.
+export async function setExchangeRate(_prev: string | undefined, formData: FormData): Promise<string | undefined> {
+  const viewer = await requirePermission("admin");
+  const parsed = parseInput(fxSchema, { date: String(formData.get("date") ?? ""), usdInr: String(formData.get("usdInr") ?? "") });
+  if (!parsed.ok) return parsed.error;
+  if (Number(parsed.data.usdInr) <= 0) return "Rate must be more than zero.";
+  const date = new Date(`${parsed.data.date}T00:00:00Z`);
+
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.exchangeRate.findUnique({ where: { date } });
+    const after = await tx.exchangeRate.upsert({
+      where: { date },
+      create: { date, usdInr: parsed.data.usdInr, createdById: viewer.id },
+      update: { usdInr: parsed.data.usdInr, createdById: viewer.id },
+    });
+    await writeAudit(tx, viewer.id, {
+      action: before ? "UPDATE" : "CREATE",
+      entity: "ExchangeRate",
+      entityId: parsed.data.date,
+      before,
+      after,
+    });
+  });
+  revalidatePath("/settings/fx");
+}
+
 const generalSchema = z.object({
   pendingAlertDays: z.coerce
     .number({ message: "Pending alert days must be a number." })

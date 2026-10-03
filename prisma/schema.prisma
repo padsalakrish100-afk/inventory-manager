@@ -257,6 +257,10 @@ model ProcessMovement {
 
   breakages Breakage[]
 
+  labourEntry   LabourEntry?
+  jobWorkBill   JobWorkBill? @relation(fields: [jobWorkBillId], references: [id])
+  jobWorkBillId String?
+
   @@index([productId])
   @@index([partyId])
   @@index([memoId])
@@ -265,6 +269,7 @@ model ProcessMovement {
   @@index([returnDate])
   @@index([isExcessLoss])
   @@index([toDepartmentId])
+  @@index([jobWorkBillId])
 }
 
 // The printed voucher handed to a party when stones are issued to them —
@@ -469,18 +474,39 @@ model ProcessRate {
   id            String       @id @default(cuid())
   stage         LotStatus?
   process       ProcessName?
-  ratePerCarat  Float
+  // Old per-carat rate. Still written for per-carat rows; `rate` + `basis`
+  // are the source of truth since the ERP rate cards.
+  ratePerCarat  Float?
   caratMin      Float?
   caratMax      Float?
   effectiveFrom DateTime     @default(now())
   createdAt     DateTime     @default(now())
 
-  party   Party  @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  partyId String
+  // A rate with no party is the default for the stage; a karigar's own rate
+  // beats it. History is kept by adding rows, never editing them.
+  party   Party?  @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  partyId String?
+
+  // ─── ERP rate card ───
+  processStage   ProcessStage? @relation(fields: [processStageId], references: [id])
+  processStageId String?
+  basis          RateBasis     @default(PER_CARAT)
+  rate           Decimal?      @db.Decimal(14, 2)
+  currency       String        @default("INR")
+  createdById    String?
+
+  labourEntries LabourEntry[]
 
   @@index([stage])
   @@index([process])
   @@index([partyId])
+  @@index([processStageId, partyId, effectiveFrom])
+}
+
+enum RateBasis {
+  PER_CARAT
+  PER_PIECE
+  FIXED
 }
 
 enum TransactionType {
@@ -533,6 +559,13 @@ model Party {
   stoneEvents      StoneEvent[]
   lossLimits       LossLimit[]
   breakagesHandled Breakage[]
+
+  karigarProfile     KarigarProfile?
+  karigarDepartments KarigarDepartment[]
+  labourEntries      LabourEntry[]
+  adjustments        KarigarAdjustment[]
+  payrollRuns        PayrollRun[]
+  jobWorkBills       JobWorkBill[]
 
   transactions         Transaction[]
   lotExpenses          LotExpense[]
@@ -592,8 +625,9 @@ model Department {
   users      UserDepartment[]
   stonesHere Product[]
 
-  movementsFrom ProcessMovement[] @relation("MovementFrom")
-  movementsTo   ProcessMovement[] @relation("MovementTo")
+  karigars      KarigarDepartment[]
+  movementsFrom ProcessMovement[]   @relation("MovementFrom")
+  movementsTo   ProcessMovement[]   @relation("MovementTo")
   memos         Memo[]
 }
 
@@ -623,10 +657,12 @@ model ProcessStage {
   active              Boolean      @default(true)
   createdAt           DateTime     @default(now())
 
-  stonesHere Product[]
-  movements  ProcessMovement[]
-  memos      Memo[]
-  lossLimits LossLimit[]
+  stonesHere    Product[]
+  movements     ProcessMovement[]
+  memos         Memo[]
+  lossLimits    LossLimit[]
+  rates         ProcessRate[]
+  labourEntries LabourEntry[]
 
   @@index([departmentId])
 }
@@ -768,4 +804,145 @@ model AttachmentData {
   attachmentId String @id
   data         Bytes
   thumb        Bytes?
+}
+
+// ─── ERP karigar / labour ───────────────────────────────────────────────────
+
+// Extra details for a party with the Karigar role. Photo: Attachment
+// (entityType "KARIGAR_PHOTO", entityId = partyId).
+model KarigarProfile {
+  party        Party     @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  partyId      String    @id
+  employeeCode String?   @unique
+  joiningDate  DateTime?
+  notes        String?
+  updatedAt    DateTime  @updatedAt
+}
+
+model KarigarDepartment {
+  party        Party      @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  partyId      String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  departmentId String
+
+  @@id([partyId, departmentId])
+  @@index([departmentId])
+}
+
+// Labour earned for one completed return, priced from the rate card in
+// force on the work date. One per movement; amounts are frozen when created.
+model LabourEntry {
+  id           String          @id @default(cuid())
+  movement     ProcessMovement @relation(fields: [movementId], references: [id])
+  movementId   String          @unique
+  party        Party           @relation(fields: [partyId], references: [id])
+  partyId      String
+  stage        ProcessStage?   @relation(fields: [stageId], references: [id])
+  stageId      String?
+  workDate     DateTime
+  basis        RateBasis
+  rate         Decimal         @db.Decimal(14, 2)
+  quantity     Decimal         @db.Decimal(12, 3)
+  amount       Decimal         @db.Decimal(14, 2)
+  currency     String          @default("INR")
+  // INR per 1 USD on the work date; null only on entries migrated from
+  // before exchange rates were recorded.
+  fxRate       Decimal?        @db.Decimal(12, 4)
+  // RATE_CARD | ISSUE_RATE (priced at issue, pre-ERP) | LEGACY | ADJUSTED
+  source       String
+  rateCard     ProcessRate?    @relation(fields: [rateCardId], references: [id])
+  rateCardId   String?
+  note         String?
+  payrollRun   PayrollRun?     @relation(fields: [payrollRunId], references: [id])
+  payrollRunId String?
+  voidedAt     DateTime?
+  createdAt    DateTime        @default(now())
+
+  @@index([partyId, workDate])
+  @@index([payrollRunId])
+  @@index([workDate])
+}
+
+enum AdjustmentType {
+  ADVANCE
+  DEDUCTION
+  BONUS
+}
+
+// Money given to or taken from a karigar outside piece-rate labour: an
+// advance (recovered from the next payroll), a deduction, or a bonus.
+model KarigarAdjustment {
+  id           String         @id @default(cuid())
+  party        Party          @relation(fields: [partyId], references: [id])
+  partyId      String
+  date         DateTime
+  type         AdjustmentType
+  amount       Decimal        @db.Decimal(14, 2)
+  currency     String         @default("INR")
+  fxRate       Decimal?       @db.Decimal(12, 4)
+  note         String?
+  payrollRun   PayrollRun?    @relation(fields: [payrollRunId], references: [id])
+  payrollRunId String?
+  createdById  String
+  voidedAt     DateTime?
+  createdAt    DateTime       @default(now())
+
+  @@index([partyId, date])
+}
+
+// A karigar paid for a period: the labour entries and adjustments it
+// settles are linked to it and locked.
+model PayrollRun {
+  id             String              @id @default(cuid())
+  party          Party               @relation(fields: [partyId], references: [id])
+  partyId        String
+  periodFrom     DateTime
+  periodTo       DateTime
+  labourTotal    Decimal             @db.Decimal(14, 2)
+  bonusTotal     Decimal             @db.Decimal(14, 2)
+  deductionTotal Decimal             @db.Decimal(14, 2)
+  advanceTotal   Decimal             @db.Decimal(14, 2)
+  net            Decimal             @db.Decimal(14, 2)
+  currency       String              @default("INR")
+  fxRate         Decimal?            @db.Decimal(12, 4)
+  paidAt         DateTime
+  paymentMode    String?
+  paymentRef     String?
+  createdById    String
+  voidedAt       DateTime?
+  voidReason     String?
+  createdAt      DateTime            @default(now())
+  labourEntries  LabourEntry[]
+  adjustments    KarigarAdjustment[]
+
+  @@index([partyId, periodFrom])
+}
+
+// An outside factory's (job-worker's) bill for work on issued stones.
+model JobWorkBill {
+  id          String            @id @default(cuid())
+  party       Party             @relation(fields: [partyId], references: [id])
+  partyId     String
+  billNo      String
+  date        DateTime
+  amount      Decimal           @db.Decimal(14, 2)
+  currency    String            @default("INR")
+  fxRate      Decimal?          @db.Decimal(12, 4)
+  notes       String?
+  createdById String
+  voidedAt    DateTime?
+  createdAt   DateTime          @default(now())
+  movements   ProcessMovement[]
+
+  @@unique([partyId, billNo])
+  @@index([date])
+}
+
+// Daily USD→INR rate (INR per 1 USD). Money entries copy the rate in force
+// on their date, so later changes never rewrite history.
+model ExchangeRate {
+  date        DateTime @id @db.Date
+  usdInr      Decimal  @db.Decimal(12, 4)
+  createdById String?
+  createdAt   DateTime @default(now())
 }

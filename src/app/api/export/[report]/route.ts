@@ -1,6 +1,8 @@
 import { can, getViewer, type Permission } from "@/lib/authz";
 import { writeAudit } from "@/lib/audit";
 import { formatDate } from "@/lib/dates";
+import { periodBounds, rupees, unpaidPayroll } from "@/lib/karigar/payroll";
+import { karigarPerformance } from "@/lib/karigar/performance";
 import { prisma } from "@/lib/prisma";
 import { buildExcelBuffer, excelResponse, type ExportColumn } from "@/lib/export/excel";
 import { buildPdfBuffer, pdfResponse, type PdfColumn } from "@/lib/export/pdf";
@@ -19,7 +21,17 @@ const REPORT_PERMISSIONS: Record<string, Permission> = {
   "polish-sales": "sales.reports",
   "manufacturing-reports": "mfg.reports",
   lotting: "lots.manage",
+  payroll: "costs.view",
+  "karigar-performance": "karigars.manage",
 };
+
+function periodFrom(searchParams: URLSearchParams) {
+  const ok = (v: string | null) => Boolean(v && /^d{4}-d{2}-d{2}$/.test(v));
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+  const from = ok(searchParams.get("from")) ? searchParams.get("from")! : `${today.slice(0, 8)}01`;
+  const to = ok(searchParams.get("to")) ? searchParams.get("to")! : today;
+  return { from, to, ...periodBounds(from, to) };
+}
 
 async function buildReport(
   report: string,
@@ -243,6 +255,66 @@ async function buildReport(
           roughWeight: lot.roughWeight ?? "",
           stones: lot._count.products,
           date: formatDate(lot.createdAt),
+        })),
+      };
+    }
+
+    case "payroll": {
+      const { from, to, start, end } = periodFrom(searchParams);
+      const lines = await unpaidPayroll(prisma, start, end);
+      return {
+        title: "Karigar payroll (unpaid)",
+        subtitle: `${from} to ${to} · INR`,
+        columns: [
+          { header: "Karigar", key: "name", width: 28 },
+          { header: "Jobs", key: "entries" },
+          { header: "Carats", key: "carats" },
+          { header: "Labour", key: "labour" },
+          { header: "Bonus", key: "bonus" },
+          { header: "Deduction", key: "deduction" },
+          { header: "Advance", key: "advance" },
+          { header: "Net payable", key: "net" },
+        ],
+        rows: lines.map((l) => ({
+          name: l.name,
+          entries: l.entries,
+          carats: Number(l.carats.toFixed(3)),
+          labour: Number(rupees(l.labour)),
+          bonus: Number(rupees(l.bonus)),
+          deduction: Number(rupees(l.deduction)),
+          advance: Number(rupees(l.advance)),
+          net: Number(rupees(l.net)),
+        })),
+      };
+    }
+
+    case "karigar-performance": {
+      const { from, to, start, end } = periodFrom(searchParams);
+      const lines = await karigarPerformance(start, end);
+      return {
+        title: "Karigar performance",
+        subtitle: `${from} to ${to}`,
+        columns: [
+          { header: "Karigar", key: "name", width: 28 },
+          { header: "Returns", key: "returns" },
+          { header: "Pieces", key: "pieces" },
+          { header: "Carats", key: "carats" },
+          { header: "Avg loss %", key: "avgLoss" },
+          { header: "Excess loss", key: "excess" },
+          { header: "Breakage", key: "breakage" },
+          { header: "In hand now", key: "pending" },
+          ...(showCosts ? [{ header: "Labour (INR)", key: "labour" }] : []),
+        ],
+        rows: lines.map((l) => ({
+          name: l.name,
+          returns: l.returns,
+          pieces: l.pieces,
+          carats: Number(l.caratsIssued.toFixed(3)),
+          avgLoss: l.avgLossPct !== null ? Number(l.avgLossPct.toFixed(2)) : "",
+          excess: l.excessCount,
+          breakage: l.breakageCount,
+          pending: l.pendingNow,
+          ...(showCosts ? { labour: Number(l.labourInr.toFixed(2)) } : {}),
         })),
       };
     }

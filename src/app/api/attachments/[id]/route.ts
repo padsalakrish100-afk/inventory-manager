@@ -5,6 +5,7 @@ import { readAttachmentBlob } from "@/lib/storage";
 // Who may open an attachment, by what it's attached to.
 const VIEW_PERMISSION: Record<string, Permission> = {
   BREAKAGE: "stones.view",
+  KARIGAR_PHOTO: "karigars.manage",
 };
 
 // Serves an uploaded file after checking the viewer may see the record it

@@ -9,6 +9,7 @@ import { POLISH_STATUS_LABELS, POLISH_STATUS_STYLES } from "@/lib/polish-status"
 import { formatMoney } from "@/lib/format";
 import { can, requirePagePermission } from "@/lib/authz";
 import { formatDate } from "@/lib/dates";
+import { usdInrOn } from "@/lib/fx";
 
 export default async function PolishedStoneDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const viewer = await requirePagePermission("stock.view");
@@ -47,13 +48,22 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
   const source = polished.sourceProduct;
   const lot = source.lot;
 
-  // Labor cost: sum of what was actually paid across every process this
-  // stone went through — already recorded per movement at issue time.
-  const laborMovements = source.movements.filter((m) => m.laborCost !== null);
-  const laborCostSum = laborMovements.reduce((sum, m) => sum + (m.laborCost ?? 0), 0);
+  // Labour: the karigar labour entries for this stone (INR), converted to the
+  // stone's currency at today's exchange rate when that's USD.
+  const labourEntries = showCosts
+    ? await prisma.labourEntry.findMany({
+        where: { voidedAt: null, movement: { productId: source.id } },
+        select: { amount: true },
+      })
+    : [];
+  const labourInr = labourEntries.reduce((sum, l) => sum + Number(l.amount), 0);
+  const fx = polished.currency === "USD" ? await usdInrOn(prisma, new Date()) : null;
+  const laborCostSum =
+    polished.currency === "INR" ? labourInr : fx ? Math.round((labourInr / Number(fx)) * 100) / 100 : 0;
   const laborCostHint =
-    laborMovements.length > 0
-      ? `Auto: ${formatMoney(laborCostSum, polished.currency)} total across ${laborMovements.length} process${laborMovements.length === 1 ? "" : "es"}`
+    labourEntries.length > 0
+      ? `Auto: ₹${labourInr.toFixed(2)} across ${labourEntries.length} process${labourEntries.length === 1 ? "" : "es"}` +
+        (polished.currency === "USD" ? (fx ? ` = ${formatMoney(laborCostSum, "USD")} at ₹${Number(fx)}/USD` : " (set an exchange rate to convert)") : "")
       : null;
 
   // Rough cost: this stone's original (pre-manufacturing) weight is its

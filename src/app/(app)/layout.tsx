@@ -8,6 +8,7 @@ const navItems: { href: string; label: string; permission: Permission }[] = [
   { href: "/stones", label: "Stones", permission: "stones.view" },
   { href: "/lotting", label: "Lotting", permission: "lots.manage" },
   { href: "/manufacturing", label: "Manufacturing", permission: "mfg.view" },
+  { href: "/karigars", label: "Karigars", permission: "karigars.manage" },
   { href: "/polish", label: "Polish", permission: "stock.view" },
   { href: "/settings", label: "Settings", permission: "admin" },
 ];

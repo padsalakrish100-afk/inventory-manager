@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/settings/stages", title: "Process stages", description: "The manufacturing steps, their order and department." },
   { href: "/settings/departments", title: "Departments", description: "Factory departments that operators are assigned to." },
   { href: "/settings/loss-limits", title: "Loss limits", description: "Allowed loss % per stage, and per karigar." },
+  { href: "/settings/fx", title: "Exchange rates", description: "Daily USD/INR rate stored on every money entry." },
   { href: "/users", title: "Users", description: "Logins, roles, cost visibility, departments." },
   { href: "/admin/audit", title: "Audit log", description: "Every change: who, when, old → new." },
 ];

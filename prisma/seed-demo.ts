@@ -104,6 +104,51 @@ async function main() {
     });
   }
 
+  // Phase 3: an exchange rate, stage default rates, karigar profiles.
+  if ((await prisma.exchangeRate.count()) === 0) {
+    await prisma.exchangeRate.create({ data: { date: new Date("2026-09-01T00:00:00Z"), usdInr: "88.2500" } });
+  }
+  for (const [code, basis, rate] of [
+    ["MARKING", "PER_PIECE", "15.00"],
+    ["BLOCKING", "PER_CARAT", "80.00"],
+    ["POLISHING", "PER_CARAT", "250.00"],
+    ["BRUTING", "PER_CARAT", "85.00"],
+  ] as const) {
+    const stage = await prisma.processStage.findUnique({ where: { code } });
+    if (stage && !(await prisma.processRate.findFirst({ where: { processStageId: stage.id, partyId: null } }))) {
+      await prisma.processRate.create({
+        data: {
+          processStageId: stage.id,
+          process: stage.legacyProcess,
+          basis,
+          rate,
+          currency: "INR",
+          ratePerCarat: basis === "PER_CARAT" ? Number(rate) : null,
+          effectiveFrom: new Date("2026-01-01"),
+        },
+      });
+    }
+  }
+  // The karigar rates above are written the old way (process + per-carat);
+  // give them their stage and rate-card fields like the Phase 3 backfill.
+  await prisma.$executeRaw`
+    UPDATE "ProcessRate" r SET "processStageId" = s."id", "basis" = 'PER_CARAT', "rate" = ROUND(r."ratePerCarat"::numeric, 2)
+    FROM "ProcessStage" s
+    WHERE r."processStageId" IS NULL AND r."process" IS NOT NULL AND s."legacyProcess" = r."process"`;
+  for (const k of [sawyer, bruter]) {
+    await prisma.karigarProfile.upsert({ where: { partyId: k.id }, create: { partyId: k.id, joiningDate: new Date("2024-04-01") }, update: {} });
+  }
+  for (const [k, dept] of [
+    [sawyer, "dept_sawing"],
+    [bruter, "dept_bruting"],
+  ] as const) {
+    await prisma.karigarDepartment.upsert({
+      where: { partyId_departmentId: { partyId: k.id, departmentId: dept } },
+      create: { partyId: k.id, departmentId: dept },
+      update: {},
+    });
+  }
+
   const lotNumber = "DEMO-LOT-001";
   if (await prisma.lot.findUnique({ where: { lotNumber } })) {
     await backfillDemoMovements();

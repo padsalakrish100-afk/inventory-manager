@@ -3,34 +3,17 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/authz";
 import { PARTY_ROLE_LABELS, PARTY_ROLE_STYLES } from "@/lib/party-category";
-import { PROCESS_LABELS } from "@/lib/process";
 import { EditPartyForm } from "./edit-party-form";
 import { ActiveToggleButton } from "../active-toggle-button";
-import { RateForm } from "./rate-form";
-import { DeleteRateButton } from "./delete-rate-button";
 
 export default async function PartyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requirePagePermission("admin");
 
   const { id } = await params;
-  const party = await prisma.party.findUnique({
-    where: { id },
-    include: {
-      processRates: { where: { process: { not: null } }, orderBy: [{ process: "asc" }, { effectiveFrom: "desc" }] },
-    },
-  });
+  const party = await prisma.party.findUnique({ where: { id } });
   if (!party) notFound();
 
   const taxIds = (party.taxIds ?? {}) as Record<string, string | undefined>;
-  const now = new Date();
-  const currentRateByProcess = new Map<string, (typeof party.processRates)[number]>();
-  for (const rate of party.processRates) {
-    if (!rate.process || rate.effectiveFrom > now) continue;
-    const existing = currentRateByProcess.get(rate.process);
-    if (!existing || rate.effectiveFrom > existing.effectiveFrom) {
-      currentRateByProcess.set(rate.process, rate);
-    }
-  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -78,70 +61,15 @@ export default async function PartyDetailPage({ params }: { params: Promise<{ id
       </section>
 
       {(party.roles.includes("KARIGAR") || party.roles.includes("JOB_WORKER")) && (
-        <section className="flex flex-col gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-zinc-900">Process rates</h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              What this karigar charges per carat, by process. Adding a new rate for a process
-              doesn&apos;t erase the old one — Manufacturing issues already recorded keep showing the
-              labor cost they were actually charged.
-            </p>
-          </div>
-
-          {currentRateByProcess.size > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {[...currentRateByProcess.entries()].map(([process, rate]) => (
-                <span key={process} className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
-                  {PROCESS_LABELS[process]}: ₹{rate.ratePerCarat.toFixed(2)}/ct
-                </span>
-              ))}
-            </div>
-          )}
-
-          <RateForm partyId={party.id} />
-
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Process</th>
-                  <th className="px-4 py-3 font-medium">Rate</th>
-                  <th className="px-4 py-3 font-medium">Effective from</th>
-                  <th className="px-4 py-3 font-medium"></th>
-                  <th className="px-4 py-3 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {party.processRates.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
-                      No rates saved yet.
-                    </td>
-                  </tr>
-                )}
-                {party.processRates.map((rate) => {
-                  const isCurrent = rate.process ? currentRateByProcess.get(rate.process)?.id === rate.id : false;
-                  return (
-                    <tr key={rate.id} className="border-b border-zinc-100 last:border-0">
-                      <td className="px-4 py-3 text-zinc-900">{rate.process ? PROCESS_LABELS[rate.process] : "—"}</td>
-                      <td className="px-4 py-3 text-zinc-800">₹{rate.ratePerCarat.toFixed(2)}/ct</td>
-                      <td className="px-4 py-3 text-zinc-500">{rate.effectiveFrom.toLocaleDateString()}</td>
-                      <td className="px-4 py-3">
-                        {isCurrent && (
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                            Current
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <DeleteRateButton rateId={rate.id} partyId={party.id} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <section className="max-w-2xl rounded-lg border border-zinc-200 bg-white p-5">
+          <h2 className="font-medium text-zinc-900">Rate cards, labour &amp; payroll</h2>
+          <p className="mt-1 text-sm text-zinc-500">Managed on the karigar&apos;s own page.</p>
+          <Link
+            href={party.roles.includes("KARIGAR") ? `/karigars/${party.id}` : "/job-work"}
+            className="mt-3 inline-flex min-h-10 items-center rounded-md border border-zinc-300 px-4 text-sm text-zinc-700 hover:bg-zinc-50"
+          >
+            {party.roles.includes("KARIGAR") ? "Open karigar page" : "Open job-work"}
+          </Link>
         </section>
       )}
     </div>

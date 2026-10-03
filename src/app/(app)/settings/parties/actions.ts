@@ -3,13 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { dateInputToStartOfDayIST } from "@/lib/dates";
-import { Prisma, type PartyRoleType, type ProcessName } from "@/generated/prisma/client";
-import { PROCESS_VALUES } from "@/lib/process";
+import { Prisma, type PartyRoleType } from "@/generated/prisma/client";
 import { requirePermission } from "@/lib/authz";
 import { writeAudit } from "@/lib/audit";
 import { categoryForRoles, PARTY_ROLE_VALUES } from "@/lib/party";
-import { formToObject, parseInput, zDateString, zOptionalMoney, zOptionalText, zRequiredText } from "@/lib/validation";
+import { formToObject, parseInput, zOptionalMoney, zOptionalText, zRequiredText } from "@/lib/validation";
 
 const partySchema = z.object({
   roles: z.array(z.enum(PARTY_ROLE_VALUES)).min(1, "Choose at least one role.").default([]),
@@ -134,54 +132,4 @@ export async function setPartyActive(partyId: string, active: boolean) {
 
   revalidatePath("/settings/parties");
   revalidatePath(`/settings/parties/${partyId}`);
-}
-
-const rateSchema = z.object({
-  process: z.enum(PROCESS_VALUES, { message: "Invalid process." }),
-  ratePerCarat: z.coerce
-    .number({ message: "Rate per carat must be a positive number." })
-    .positive("Rate per carat must be a positive number.")
-    .max(10_000_000, "Rate per carat is too large."),
-  effectiveFrom: zDateString("Effective-from date"),
-});
-
-export async function addProcessRate(
-  partyId: string,
-  _prevState: string | undefined,
-  formData: FormData,
-): Promise<string | undefined> {
-  const viewer = await requirePermission("admin");
-
-  const parsed = parseInput(rateSchema, {
-    process: String(formData.get("process") ?? ""),
-    ratePerCarat: String(formData.get("ratePerCarat") ?? ""),
-    effectiveFrom: String(formData.get("effectiveFrom") ?? ""),
-  });
-  if (!parsed.ok) return parsed.error;
-  const { process, ratePerCarat } = parsed.data;
-  const effectiveFrom = dateInputToStartOfDayIST(parsed.data.effectiveFrom);
-
-  await prisma.$transaction(async (tx) => {
-    const rate = await tx.processRate.create({
-      data: { partyId, process: process as ProcessName, ratePerCarat, effectiveFrom },
-    });
-    await writeAudit(tx, viewer.id, { action: "CREATE", entity: "ProcessRate", entityId: rate.id, after: rate });
-  });
-
-  revalidatePath(`/settings/parties/${partyId}`);
-  revalidatePath("/manufacturing/issue");
-}
-
-export async function deleteProcessRate(rateId: string, partyId: string) {
-  const viewer = await requirePermission("admin");
-
-  await prisma.$transaction(async (tx) => {
-    const rate = await tx.processRate.findUnique({ where: { id: rateId } });
-    if (!rate || rate.partyId !== partyId) throw new Error("Rate not found.");
-    await tx.processRate.delete({ where: { id: rateId } });
-    await writeAudit(tx, viewer.id, { action: "DELETE", entity: "ProcessRate", entityId: rateId, before: rate });
-  });
-
-  revalidatePath(`/settings/parties/${partyId}`);
-  revalidatePath("/manufacturing/issue");
 }

@@ -23,6 +23,7 @@ export type Permission =
   | "mfg.view" // Manufacturing pages
   | "mfg.issueReturn" // Issue / return (operators: own departments only)
   | "mfg.reports"
+  | "karigars.manage" // karigar master, rate cards, job-work (amounts also need costs.view)
   | "stock.view" // Polish / polished stock
   | "stock.edit"
   | "sales.reports"
@@ -37,6 +38,7 @@ const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "mfg.view",
     "mfg.issueReturn",
     "mfg.reports",
+    "karigars.manage",
     "stock.view",
     "stock.edit",
     "sales.reports",
@@ -50,6 +52,7 @@ const ROLE_PERMISSIONS: Record<AppRole, readonly Permission[]> = {
     "mfg.view",
     "mfg.issueReturn",
     "mfg.reports",
+    "karigars.manage",
     "stock.view",
     "stock.edit",
     "sales.reports",

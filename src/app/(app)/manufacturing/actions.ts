@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { dateInputToInstant } from "@/lib/dates";
 import type { ProcessName } from "@/generated/prisma/client";
-import { can, canWorkInDepartment, requirePermission } from "@/lib/authz";
+import { canWorkInDepartment, requirePermission } from "@/lib/authz";
 import { TX_OPTIONS, writeAudit, type AuditEntry } from "@/lib/audit";
 import { nextMemoNumber, nextStockId } from "@/lib/counter";
 import { recordStoneEvents, type StoneEventInput } from "@/lib/stone/events";
@@ -16,13 +16,13 @@ import { ensurePartyWithRole } from "@/lib/party";
 import { computeLoss, isOverLimit } from "@/lib/manufacturing/loss";
 import { resolveLossLimit } from "@/lib/manufacturing/limits";
 import { RETURN_CONDITIONS } from "@/lib/manufacturing/conditions";
+import { createLabourForReturn } from "@/lib/manufacturing/labour";
 import {
   parseInput,
   zCarat,
   zDateString,
   zId,
   zOptionalCarat,
-  zOptionalMoney,
   zOptionalText,
 } from "@/lib/validation";
 
@@ -64,7 +64,6 @@ const issueSchema = z
           sku: z.string().trim().max(100),
           weight: zOptionalCarat("Issue weight"),
           pieces: zPieces,
-          laborCost: zOptionalMoney("Labor cost"),
           reissueReason: zOptionalText(500),
         }),
       )
@@ -83,7 +82,7 @@ export type IssueInput = {
   fromDepartmentId: string;
   date: string;
   notes: string;
-  stones: { sku: string; weight: string; pieces: string; laborCost: string; reissueReason: string }[];
+  stones: { sku: string; weight: string; pieces: string; reissueReason: string }[];
 };
 
 export type IssueResult = { error?: string; memoId?: string };
@@ -110,10 +109,6 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
 
   const skus = d.stones.map((s) => s.sku);
   if (new Set(skus).size !== skus.length) return { error: "The same stone is listed twice." };
-
-  // Labour cost: people who can see costs may type/override it; for everyone
-  // else it's worked out here from the karigar's rate card.
-  const canEditLabour = can(viewer, "costs.view");
 
   try {
     const memoId = await prisma.$transaction(async (tx) => {
@@ -151,17 +146,19 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
         }
       }
 
-      const party = d.target === "KARIGAR" ? await ensurePartyWithRole(tx, viewer.id, d.party, "KARIGAR") : null;
+      // An existing karigar or outside job-worker is used as-is (a job-worker
+      // must not gain the Karigar role, or they'd also earn rate-card labour
+      // on top of their bill); a new name is saved as a karigar.
+      let party: { id: string; name: string } | null = null;
+      if (d.target === "KARIGAR") {
+        const existing = await tx.party.findUnique({ where: { name: d.party }, select: { id: true, name: true, roles: true } });
+        party =
+          existing && (existing.roles.includes("KARIGAR") || existing.roles.includes("JOB_WORKER"))
+            ? existing
+            : await ensurePartyWithRole(tx, viewer.id, d.party, "KARIGAR");
+      }
       const toDepartmentId = d.target === "DEPARTMENT" ? d.toDepartmentId : null;
       const legacyProcess = (stage.legacyProcess as ProcessName | null) ?? null;
-
-      const rate =
-        party && legacyProcess
-          ? await tx.processRate.findFirst({
-              where: { partyId: party.id, process: legacyProcess, effectiveFrom: { lte: date } },
-              orderBy: { effectiveFrom: "desc" },
-            })
-          : null;
 
       const memo = await tx.memo.create({
         data: {
@@ -181,8 +178,6 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
       for (const s of d.stones) {
         const product = bySku.get(s.sku)!;
         const weight = s.weight !== null ? Number(s.weight) : product.caratWeight!;
-        const autoLabour = rate && stage.isLabourBillable ? Math.round(rate.ratePerCarat * weight * 100) / 100 : null;
-        const laborCost = canEditLabour ? toNumber(s.laborCost) : autoLabour;
 
         const movement = await tx.processMovement.create({
           data: {
@@ -196,7 +191,7 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
             issueDate: date,
             issueWeight: weight,
             issuePieces: s.pieces,
-            laborCost,
+            // Labour is priced when the stone comes back (LabourEntry).
             reissueReason: s.reissueReason,
             notes: d.notes,
             memoId: memo.id,
@@ -387,6 +382,14 @@ export async function returnStones(input: ReturnInput): Promise<ReturnResult> {
           },
         });
 
+        const labour = await createLabourForReturn(
+          tx,
+          movement,
+          stage ? { id: stage.id, isLabourBillable: stage.isLabourBillable } : null,
+          date,
+        );
+        if (labour) audits.push({ action: "CREATE", entity: "LabourEntry", entityId: labour.id, after: labour });
+
         const stageName = stage?.name ?? "process";
         const from = movementParty?.name ?? toDepartment?.name;
         audits.push(
@@ -562,6 +565,19 @@ export async function voidMovement(movementId: string, reason: string): Promise<
       });
       if (product.polishedStone) throw new UserError("The stone is already in Polish — undo the transfer first.");
       if (product._count.children > 0) throw new UserError("The stone has been split — this entry can't be undone.");
+
+      const labour = await tx.labourEntry.findUnique({
+        where: { movementId },
+        include: { payrollRun: { select: { voidedAt: true } } },
+      });
+      if (labour && !labour.voidedAt && labour.payrollRun && !labour.payrollRun.voidedAt) {
+        throw new UserError("The labour for this entry has already been paid in payroll — reverse that payroll first.");
+      }
+      if (labour && !labour.voidedAt) {
+        const { payrollRun: _pr, ...labourBefore } = labour;
+        const labourAfter = await tx.labourEntry.update({ where: { id: labour.id }, data: { voidedAt: new Date() } });
+        await writeAudit(tx, viewer.id, { action: "VOID", entity: "LabourEntry", entityId: labour.id, before: labourBefore, after: labourAfter });
+      }
 
       const voided = await tx.processMovement.update({
         where: { id: movementId },
