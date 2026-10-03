@@ -1,3 +1,4 @@
+import { num, num0 } from "@/lib/decimal";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
@@ -141,7 +142,7 @@ export default async function ManufacturingReportsPage({
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-zinc-500">{lot.sourceParty?.name ?? "—"}</td>
-                    <td className="px-4 py-3 text-zinc-500">{lot.roughWeight ?? "—"} ct</td>
+                    <td className="px-4 py-3 text-zinc-500">{num(lot.roughWeight) ?? "—"} ct</td>
                     <td className="px-4 py-3 text-zinc-800">{lot.products.length}</td>
                     <td className="px-4 py-3 text-zinc-500">{available}</td>
                     <td className="px-4 py-3 text-zinc-500">{issued}</td>
@@ -182,11 +183,11 @@ export default async function ManufacturingReportsPage({
               {lots.map((lot) => {
                 const polishedStones = lot.products.filter((p) => p.polishedStone);
                 const polishedWeight = polishedStones.reduce(
-                  (sum, p) => sum + (p.polishedStone?.caratWeight ?? 0),
+                  (sum, p) => sum + num0(p.polishedStone?.caratWeight),
                   0,
                 );
                 const yieldPct =
-                  lot.roughWeight && lot.roughWeight > 0 ? (polishedWeight / lot.roughWeight) * 100 : null;
+                  num0(lot.roughWeight) > 0 ? (polishedWeight / num0(lot.roughWeight)) * 100 : null;
                 return (
                   <tr key={lot.id} className="border-b border-zinc-100 last:border-0">
                     <td className="px-4 py-3">
@@ -194,7 +195,7 @@ export default async function ManufacturingReportsPage({
                         {lot.lotNumber}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-zinc-500">{lot.roughWeight ?? "—"} ct</td>
+                    <td className="px-4 py-3 text-zinc-500">{num(lot.roughWeight) ?? "—"} ct</td>
                     <td className="px-4 py-3 text-zinc-500">{polishedWeight.toFixed(2)} ct</td>
                     <td className="px-4 py-3 text-zinc-800">{polishedStones.length}</td>
                     <td className="px-4 py-3 font-medium text-zinc-900">

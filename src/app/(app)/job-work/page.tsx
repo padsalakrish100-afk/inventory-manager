@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { can, requirePagePermission } from "@/lib/authz";
@@ -84,7 +85,7 @@ export default async function JobWorkPage() {
                         {m.product.sku}
                       </Link>
                       <span className="text-zinc-500">
-                        {m.stage?.name} · {m.issueWeight} ct · {daysSince(m.issueDate)}d
+                        {m.stage?.name} · {num(m.issueWeight)} ct · {daysSince(m.issueDate)}d
                       </span>
                     </li>
                   ))}

@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -107,7 +108,7 @@ export default async function StoneHubPage({ params }: { params: Promise<{ id: s
   const canTransfer = canEdit && !isOut && !stone.polishedStone && inProduction;
 
   const roughWeight = stone.roughWeight !== null ? Number(stone.roughWeight) : null;
-  const finalWeight = stone.polishedStone?.caratWeight ?? null;
+  const finalWeight = num(stone.polishedStone?.caratWeight);
   const yieldPct = roughWeight && finalWeight ? (finalWeight / roughWeight) * 100 : null;
   const outWith = openMovement?.party?.name ?? openMovement?.toDepartment?.name ?? stone.currentParty?.name;
 
@@ -317,14 +318,14 @@ export default async function StoneHubPage({ params }: { params: Promise<{ id: s
             <Stat
               label="Per carat (USD)"
               value={(() => {
-                const ct = stone.polishedStone?.caratWeight ?? stone.caratWeight;
+                const ct = num(stone.polishedStone?.caratWeight) ?? num(stone.caratWeight);
                 return ct ? formatUsd(cost.usdCents / 100 / ct) : "—";
               })()}
             />
             <Stat
               label="Per carat (INR)"
               value={(() => {
-                const ct = stone.polishedStone?.caratWeight ?? stone.caratWeight;
+                const ct = num(stone.polishedStone?.caratWeight) ?? num(stone.caratWeight);
                 return ct ? formatInr(cost.inrCents / 100 / ct) : "—";
               })()}
             />

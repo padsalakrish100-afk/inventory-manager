@@ -1,4 +1,5 @@
 "use server";
+import { num, num0 } from "@/lib/decimal";
 
 import { assertPeriodsOpen, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
@@ -252,7 +253,7 @@ export async function splitStone(input: {
       // Thousandths of a carat, so shares add up exactly.
       const childMilli = d.children.map((w) => Math.round(Number(w) * 1000));
       const totalMilli = childMilli.reduce((a, b) => a + b, 0);
-      const parentMilli = parent.caratWeight !== null ? Math.round(parent.caratWeight * 1000) : null;
+      const parentMilli = parent.caratWeight !== null ? Math.round(num0(parent.caratWeight) * 1000) : null;
       if (parentMilli !== null && totalMilli > parentMilli) {
         throw new UserError(`Children total ${(totalMilli / 1000).toFixed(3)} ct — more than the stone's ${parent.caratWeight} ct.`);
       }
@@ -324,7 +325,7 @@ export async function splitStone(input: {
           type: "SPLIT",
           at: date,
           userId: viewer.id,
-          weightBefore: parent.caratWeight,
+          weightBefore: num(parent.caratWeight),
           weightAfter: totalMilli / 1000,
           refType: "StoneSplit",
           refId: split.id,

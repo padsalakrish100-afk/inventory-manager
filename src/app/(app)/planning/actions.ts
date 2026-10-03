@@ -1,4 +1,5 @@
 "use server";
+import { num } from "@/lib/decimal";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -56,7 +57,7 @@ export async function savePlan(stoneId: string, _prev: string | undefined, formD
   const stone = await prisma.product.findUnique({ where: { id: stoneId }, select: { status: true, roughWeight: true, caratWeight: true } });
   if (!stone) return "Stone not found.";
   if (!["IN_PRODUCTION", "POLISHED"].includes(stone.status)) return "Plans can only be made for a stone in production.";
-  const base = stone.roughWeight !== null ? Number(stone.roughWeight) : stone.caratWeight;
+  const base = stone.roughWeight !== null ? Number(stone.roughWeight) : num(stone.caratWeight);
   if (base !== null && Number(d.plannedWeight) > base) return `Planned weight is more than the stone's ${base} ct.`;
 
   await prisma.$transaction(async (tx) => {

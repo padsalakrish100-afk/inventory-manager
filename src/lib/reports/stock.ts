@@ -1,4 +1,5 @@
 import "server-only";
+import { num, num0 } from "@/lib/decimal";
 import { prisma } from "@/lib/prisma";
 import { usdInrOn } from "@/lib/fx";
 import { daysSince } from "@/lib/dates";
@@ -78,13 +79,13 @@ export const stockAging: ReportDef = {
         p,
         days,
         band: ageBand(days),
-        askingUsd: p.askingPrice !== null ? toUsd(p.askingPrice, p.currency, fx ? Number(fx) : null) : null,
+        askingUsd: p.askingPrice !== null ? toUsd(num0(p.askingPrice), p.currency, fx ? Number(fx) : null) : null,
         costUsd: costs ? (costs.get(p.sourceProduct.id)?.usdCents ?? 0) / 100 : null,
       };
     });
     const totals = {
       stones: rows.length,
-      carats: r3(sum(rows, (r) => r.p.caratWeight)),
+      carats: r3(sum(rows, (r) => num(r.p.caratWeight))),
       askingUsd: r2(sum(rows, (r) => r.askingUsd)),
       costUsd: ctx.showCosts ? r2(sum(rows, (r) => r.costUsd)) : null,
     };
@@ -106,7 +107,7 @@ export const stockAging: ReportDef = {
           return {
             band: b.label,
             stones: g.length,
-            carats: r3(sum(g, (r) => r.p.caratWeight)),
+            carats: r3(sum(g, (r) => num(r.p.caratWeight))),
             askingUsd: r2(sum(g, (r) => r.askingUsd)),
             costUsd: ctx.showCosts ? r2(sum(g, (r) => r.costUsd)) : null,
           };
@@ -139,7 +140,7 @@ export const stockAging: ReportDef = {
           href: `/polish/${r.p.id}`,
           cut: cutLabel(r.p),
           shape: r.p.shape ?? "",
-          carats: r.p.caratWeight,
+          carats: num(r.p.caratWeight),
           color: r.p.color ?? "",
           clarity: r.p.clarity ?? "",
           status: STONE_STATUS_LABELS[r.p.sourceProduct.status],
@@ -172,15 +173,15 @@ export const stockList: ReportDef = {
     ]);
     const dec = (v: { toString(): string } | null) => (v === null ? null : Number(v.toString()));
     const rows = stones.map((p) => {
-      const askingUsd = p.askingPrice !== null ? toUsd(p.askingPrice, p.currency, fx ? Number(fx) : null) : null;
+      const askingUsd = p.askingPrice !== null ? toUsd(num0(p.askingPrice), p.currency, fx ? Number(fx) : null) : null;
       const rapPerCt = rap.prices.get(p.id) ?? null;
-      const d = vsRap(askingUsd, p.caratWeight, rapPerCt);
+      const d = vsRap(askingUsd, num(p.caratWeight), rapPerCt);
       return {
         stockId: p.stockId,
         href: `/polish/${p.id}`,
         cut: cutLabel(p),
         shape: p.shape ?? "",
-        carats: p.caratWeight,
+        carats: num(p.caratWeight),
         color: p.color ?? "",
         clarity: p.clarity ?? "",
         cutGrade: p.cutGrade ?? "",
@@ -195,7 +196,7 @@ export const stockList: ReportDef = {
         status: STONE_STATUS_LABELS[p.sourceProduct.status],
         location: locationLabel(p),
         askingUsd: askingUsd !== null ? r2(askingUsd) : null,
-        perCtUsd: askingUsd !== null && p.caratWeight ? r2(askingUsd / p.caratWeight) : null,
+        perCtUsd: askingUsd !== null && num(p.caratWeight) ? r2(askingUsd / num0(p.caratWeight)) : null,
         rapPerCt,
         vsRap: d !== null ? r2(d) : null,
         costUsd: costs ? r2((costs.get(p.sourceProduct.id)?.usdCents ?? 0) / 100) : null,

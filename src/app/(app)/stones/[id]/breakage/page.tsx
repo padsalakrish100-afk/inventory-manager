@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -41,7 +42,7 @@ export default async function BreakagePage({ params }: { params: Promise<{ id: s
       </div>
       <BreakageForm
         stoneId={stone.id}
-        currentWeight={stone.caratWeight}
+        currentWeight={num(stone.caratWeight)}
         karigarNames={karigars.map((k) => k.name)}
         defaultHandler={stone.currentParty?.name ?? null}
         isOut={Boolean(stone.currentStageId || stone.currentProcess)}

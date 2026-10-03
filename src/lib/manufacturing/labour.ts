@@ -1,4 +1,5 @@
 import "server-only";
+import { num, num0 } from "@/lib/decimal";
 import type { Tx } from "@/lib/audit";
 import { usdInrOn } from "@/lib/fx";
 
@@ -26,10 +27,10 @@ export async function createLabourForReturn(
     id: string;
     partyId: string | null;
     stageId: string | null;
-    issueWeight: number | null;
+    issueWeight: { toString(): string } | number | null;
     issuePieces: number;
     returnPieces: number | null;
-    laborCost: number | null;
+    laborCost: { toString(): string } | number | null;
   },
   stage: { id: string; isLabourBillable: boolean } | null,
   workDate: Date,
@@ -43,7 +44,8 @@ export async function createLabourForReturn(
 
   // Pre-ERP issues priced labour at issue time — honour that figure.
   if (movement.laborCost !== null) {
-    const qty = movement.issueWeight ?? 1;
+    const laborCost = num0(movement.laborCost);
+    const qty = num(movement.issueWeight) ?? 1;
     return tx.labourEntry.create({
       data: {
         movementId: movement.id,
@@ -51,9 +53,9 @@ export async function createLabourForReturn(
         stageId: stage.id,
         workDate,
         basis: "PER_CARAT",
-        rate: qty > 0 ? (movement.laborCost / qty).toFixed(2) : movement.laborCost.toFixed(2),
+        rate: qty > 0 ? (laborCost / qty).toFixed(2) : laborCost.toFixed(2),
         quantity: qty.toFixed(3),
-        amount: movement.laborCost.toFixed(2),
+        amount: laborCost.toFixed(2),
         currency: "INR",
         fxRate,
         source: "ISSUE_RATE",
@@ -67,7 +69,7 @@ export async function createLabourForReturn(
   // Per carat is charged on the weight issued (the work handed over).
   const quantity =
     card.basis === "PER_CARAT"
-      ? (movement.issueWeight ?? 0)
+      ? num0(movement.issueWeight)
       : card.basis === "PER_PIECE"
         ? (movement.returnPieces ?? movement.issuePieces)
         : 1;

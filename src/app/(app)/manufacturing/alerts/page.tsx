@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { can, requirePagePermission } from "@/lib/authz";
@@ -79,7 +80,7 @@ export default async function ExcessLossAlertsPage({ searchParams }: { searchPar
                   </span>
                   <span className="text-zinc-500">
                     {" "}
-                    ({m.lossWeight?.toString()} ct of {m.issueWeight} ct) · allowed {Number(m.lossLimitPct).toFixed(2)}%
+                    ({m.lossWeight?.toString()} ct of {num(m.issueWeight)} ct) · allowed {Number(m.lossLimitPct).toFixed(2)}%
                   </span>
                 </p>
                 <p className="mt-1 text-sm text-zinc-700">

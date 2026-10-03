@@ -1,3 +1,4 @@
+import { num, num0 } from "@/lib/decimal";
 import Link from "next/link";
 import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
@@ -65,8 +66,8 @@ export default async function PolishPage({ searchParams }: { searchParams: Promi
     rapPricesFor(stones.map((s) => ({ id: s.id, shape: s.shape, cutStyle: s.cutStyle, color: s.color, clarity: s.clarity, carat: s.caratWeight }))),
     usdInrOn(prisma, new Date()),
   ]);
-  const askingUsd = (p: { askingPrice: number | null; currency: string }) =>
-    p.askingPrice === null ? null : p.currency === "INR" ? (usdInr ? p.askingPrice / Number(usdInr) : null) : p.askingPrice;
+  const askingUsd = (p: { askingPrice: { toString(): string } | null; currency: string }) =>
+    p.askingPrice === null ? null : p.currency === "INR" ? (usdInr ? num0(p.askingPrice) / Number(usdInr) : null) : num0(p.askingPrice);
 
   const params = polishFilterParams(filters);
   const hasFilters = params.size > 0;
@@ -243,7 +244,7 @@ export default async function PolishPage({ searchParams }: { searchParams: Promi
             {stones.map((p) => {
               const st = p.sourceProduct;
               const photo = photoOf.get(st.id);
-              const d = vsRap(askingUsd(p), p.caratWeight, rap.prices.get(p.id) ?? null);
+              const d = vsRap(askingUsd(p), num(p.caratWeight), rap.prices.get(p.id) ?? null);
               return (
                 <tr key={p.id} className="border-b border-zinc-100 last:border-0">
                   <td className="px-3 py-2">

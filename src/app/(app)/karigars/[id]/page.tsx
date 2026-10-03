@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -151,7 +152,7 @@ export default async function KarigarPage({ params }: { params: Promise<{ id: st
                       </Link>
                     </td>
                     <td className="px-4 py-2 text-zinc-600">{m.stage?.name ?? "—"}</td>
-                    <td className="px-4 py-2 text-zinc-600">{m.issueWeight ?? "—"} ct</td>
+                    <td className="px-4 py-2 text-zinc-600">{num(m.issueWeight) ?? "—"} ct</td>
                     <td className="px-4 py-2 text-right text-zinc-600">{daysSince(m.issueDate)} days</td>
                   </tr>
                 ))}

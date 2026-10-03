@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -27,7 +28,7 @@ export default async function StonePlanPage({ params }: { params: Promise<{ id: 
   });
   const userName = new Map(users.map((u) => [u.id, u.name]));
   const latest = stone.plans[0];
-  const rough = stone.roughWeight !== null ? Number(stone.roughWeight) : stone.caratWeight;
+  const rough = stone.roughWeight !== null ? Number(stone.roughWeight) : num(stone.caratWeight);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">

@@ -129,3 +129,14 @@ requests.
 - **Security headers** are set in `next.config.ts`: no framing, nosniff, a referrer policy, camera allowed for the scanner only, and HSTS.
 - **Large lists:** every list page is paginated or capped, and reports show the first 1,000 rows on screen (exports include all rows). The old full-table Polish summary pages now redirect to Reports.
 - **Backups:** see [backup-restore.md](backup-restore.md).
+
+## Exact decimals everywhere (`20261003160000_decimal_money_weights`)
+
+The last 24 Float columns (stone, movement, lot and rate weights and money) are now `Decimal(12,3)` for carats and `Decimal(14,2)` for money. Code reads them with `num()` / `num0()` from `src/lib/decimal.ts` for display maths. Pass plain numbers, never Decimal objects, into client components.
+
+To release it:
+
+1. Neon: create a branch of production (the backup point).
+2. Run `prisma/checks/decimal-precheck.sql` against production. It's read-only; an empty result means rounding loses nothing. If it lists rows, decide on them before going on.
+3. Optional rehearsal: run `prisma migrate deploy` against the branch and open the app on it.
+4. At a quiet time, apply the migration to production, then merge immediately. Code from before this change expects plain numbers in these columns, so the migration and the deploy go out together. Each table is rewritten under a short lock: seconds at this data size.

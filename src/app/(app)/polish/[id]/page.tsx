@@ -1,3 +1,4 @@
+import { num, num0 } from "@/lib/decimal";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -96,17 +97,17 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
       ? null
       : polished.currency === "INR"
         ? usdInr
-          ? polished.askingPrice / Number(usdInr)
+          ? num0(polished.askingPrice) / Number(usdInr)
           : null
-        : polished.askingPrice;
-  const discount = vsRap(askingUsd, polished.caratWeight, rapPerCt);
+        : num0(polished.askingPrice);
+  const discount = vsRap(askingUsd, num(polished.caratWeight), rapPerCt);
   const certLink = verifyUrl(polished.certLab, polished.certNumber);
   const dec = (v: { toString(): string } | null) => (v === null ? null : v.toString());
 
   // Cost and margin from the stone's ledger, in the sale currency.
   const cost = showCosts ? (await stoneCosts(prisma, [source.id])).get(source.id)! : null;
   const costInSaleCurrency = cost ? (polished.currency === "INR" ? cost.inrCents : cost.usdCents) / 100 : null;
-  const margin = costInSaleCurrency !== null && polished.soldPrice !== null ? polished.soldPrice - costInSaleCurrency : null;
+  const margin = costInSaleCurrency !== null && polished.soldPrice !== null ? num0(polished.soldPrice) - costInSaleCurrency : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -125,7 +126,7 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <BarcodeLabel sku={polished.stockId} name={polished.shape ?? "Polished stone"} caratWeight={polished.caratWeight} />
+          <BarcodeLabel sku={polished.stockId} name={polished.shape ?? "Polished stone"} caratWeight={num(polished.caratWeight)} />
           <PrintLabelButton />
           {can(viewer, "stones.edit") && <UndoTransferButton polishedStoneId={polished.id} />}
         </div>
@@ -206,7 +207,7 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
           <>
             <p className="text-zinc-700">
               Rap list: {formatUsd(rapPerCt)}/ct
-              {polished.caratWeight ? ` · ${formatUsd(rapPerCt * polished.caratWeight)} total` : ""}
+              {polished.caratWeight ? ` · ${formatUsd(rapPerCt * num0(polished.caratWeight))} total` : ""}
               <span className="text-zinc-500"> (list of {rap.listDate.toISOString().slice(0, 10)})</span>
             </p>
             {discount !== null && (
@@ -247,7 +248,7 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
               ? (polished.attributes as Record<string, string | number | boolean>)
               : {},
           shape: polished.shape,
-          caratWeight: polished.caratWeight,
+          caratWeight: num(polished.caratWeight),
           color: polished.color,
           clarity: polished.clarity,
           cutGrade: polished.cutGrade,
@@ -277,11 +278,11 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
           defaults={{
             status: polished.status,
             location: polished.location,
-            askingPrice: polished.askingPrice,
+            askingPrice: num(polished.askingPrice),
             minPrice: dec(polished.minPrice),
             currency: polished.currency,
             buyerName: polished.buyer?.name ?? null,
-            soldPrice: polished.soldPrice,
+            soldPrice: num(polished.soldPrice),
             soldDate: polished.soldDate ? polished.soldDate.toISOString().slice(0, 10) : null,
             paymentStatus: polished.paymentStatus,
           }}
@@ -293,11 +294,11 @@ export default async function PolishedStoneDetailPage({ params }: { params: Prom
           <p className="text-sm text-zinc-600">
             Total cost: <span className="font-medium text-zinc-900">{formatUsd(cost.usdCents / 100)}</span> ·{" "}
             {formatInr(cost.inrCents / 100)}
-            {polished.caratWeight ? ` · ${formatUsd(cost.usdCents / 100 / polished.caratWeight)}/ct` : ""}
+            {polished.caratWeight ? ` · ${formatUsd(cost.usdCents / 100 / num0(polished.caratWeight))}/ct` : ""}
           </p>
           {polished.askingPrice !== null && costInSaleCurrency !== null && costInSaleCurrency > 0 && (
             <p className="text-sm text-zinc-600">
-              Asking is {(((polished.askingPrice - costInSaleCurrency) / costInSaleCurrency) * 100).toFixed(1)}% over cost.
+              Asking is {(((num0(polished.askingPrice) - costInSaleCurrency) / costInSaleCurrency) * 100).toFixed(1)}% over cost.
             </p>
           )}
           {margin !== null && (

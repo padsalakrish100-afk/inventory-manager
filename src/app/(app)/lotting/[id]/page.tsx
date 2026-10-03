@@ -1,3 +1,4 @@
+import { num, num0 } from "@/lib/decimal";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -39,11 +40,11 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
   const polishedCount = lot.products.filter((p) => p.polishedStone).length;
 
   const weighedStones = lot.products.filter((p) => p.caratWeight !== null);
-  const enteredTotal = Math.round(weighedStones.reduce((sum, p) => sum + (p.caratWeight ?? 0), 0) * 1000) / 1000;
+  const enteredTotal = Math.round(weighedStones.reduce((sum, p) => sum + num0(p.caratWeight), 0) * 1000) / 1000;
   const allWeighed = weighedStones.length === lot.products.length && lot.products.length > 0;
   const showVarianceCheck = lot.roughWeight !== null && weighedStones.length > 0;
-  const diff = showVarianceCheck ? Math.round((enteredTotal - lot.roughWeight!) * 1000) / 1000 : 0;
-  const diffPercent = showVarianceCheck && lot.roughWeight ? (diff / lot.roughWeight) * 100 : 0;
+  const diff = showVarianceCheck ? Math.round((enteredTotal - num0(lot.roughWeight)) * 1000) / 1000 : 0;
+  const diffPercent = showVarianceCheck && num(lot.roughWeight) ? (diff / num0(lot.roughWeight)) * 100 : 0;
   const flagged = showVarianceCheck && allWeighed && Math.abs(diffPercent) > 2;
 
   // Rough cost currently on each stone (cost viewers only).
@@ -67,7 +68,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
     : lot.purchaseCost !== null
       ? lot.purchaseCurrency
         ? formatMoney(lot.purchaseCost, lot.purchaseCurrency)
-        : lot.purchaseCost.toLocaleString("en-IN")
+        : num0(lot.purchaseCost).toLocaleString("en-IN")
       : null;
   const stonesWithoutWeight = lot.products.filter((p) => !p.parentId && p.roughWeight === null && p.caratWeight === null).length;
 
@@ -78,11 +79,11 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
           <h1 className="text-2xl font-semibold text-zinc-900">Lot {lot.lotNumber}</h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-zinc-500">
             <span>Source: {lot.sourceParty?.name ?? "—"}</span>
-            <span>&middot; Rough weight: {lot.roughWeight ?? "—"} ct</span>
+            <span>&middot; Rough weight: {num(lot.roughWeight) ?? "—"} ct</span>
             {showCost && !lot.packet && (
               <>
                 <span>&middot; Purchase cost:</span>
-                <PurchaseCostEditor lotId={lot.id} initialCost={lot.purchaseCost} roughWeight={lot.roughWeight} />
+                <PurchaseCostEditor lotId={lot.id} initialCost={num(lot.purchaseCost)} roughWeight={num(lot.roughWeight)} />
               </>
             )}
             <span>&middot; {formatDate(lot.createdAt)}</span>
@@ -166,7 +167,7 @@ export default async function LotDetailPage({ params }: { params: Promise<{ id: 
               <tr key={p.id} className="border-b border-zinc-100 last:border-0">
                 <td className="px-4 py-3 font-mono text-xs text-zinc-500">{p.sku}</td>
                 <td className="px-4 py-3">
-                  <WeightCell productId={p.id} initialWeight={p.caratWeight} />
+                  <WeightCell productId={p.id} initialWeight={num(p.caratWeight)} />
                 </td>
                 <td className="px-4 py-3">
                   {p.polishedStone ? (

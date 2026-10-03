@@ -1,4 +1,5 @@
 "use server";
+import { num } from "@/lib/decimal";
 
 import { periodLockMessage } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
@@ -151,7 +152,7 @@ export async function updateStoneWeight(productId: string, weightRaw: string): P
         stoneId: productId,
         type: "WEIGHT",
         userId: viewer.id,
-        weightBefore: product.caratWeight,
+        weightBefore: num(product.caratWeight),
         weightAfter: weight,
         summary: neverIssued ? "Rough weight recorded" : "Weight corrected",
       },

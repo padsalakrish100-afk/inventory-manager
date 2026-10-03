@@ -1,4 +1,5 @@
 import "server-only";
+import { num, num0 } from "@/lib/decimal";
 import type { CostType } from "@/generated/prisma/client";
 import { writeAudit, type Tx } from "@/lib/audit";
 import { allocateCents, centsToString, inBothCurrencies, toCents } from "@/lib/money";
@@ -100,7 +101,7 @@ export async function allocateLotRough(
 
   const weights = await weightsFor(
     tx,
-    stones.map((s) => ({ id: s.id, sku: s.sku, weight: s.roughWeight !== null ? Number(s.roughWeight) : s.caratWeight })),
+    stones.map((s) => ({ id: s.id, sku: s.sku, weight: s.roughWeight !== null ? Number(s.roughWeight) : num(s.caratWeight) })),
   );
   const parts = allocateCents(cost.cents, weights);
 
@@ -149,7 +150,7 @@ export async function propagateSplitCosts(tx: Tx, userId: string | null, parentI
   await voidEntries(tx, { stoneId: { in: children.map((c) => c.id) }, sourceType: "SPLIT", allocatedFromStoneId: parentId });
 
   const parentCost = (await stoneCosts(tx, [parentId])).get(parentId)!;
-  const weights = children.map((c) => Math.round((c.caratWeight ?? 0) * 1000));
+  const weights = children.map((c) => Math.round(num0(c.caratWeight) * 1000));
   const rows: NewEntry[] = [];
   for (const line of parentCost.lines) {
     const parts = allocateCents(toCents(line.amount), weights);
@@ -185,7 +186,7 @@ export async function allocateJobWorkBill(tx: Tx, userId: string, billId: string
 
   const weights = await weightsFor(
     tx,
-    bill.movements.map((m) => ({ id: m.productId, sku: m.product.sku, weight: m.issueWeight })),
+    bill.movements.map((m) => ({ id: m.productId, sku: m.product.sku, weight: num(m.issueWeight) })),
   );
   const parts = allocateCents(toCents(bill.amount), weights);
   const created = await createCostEntries(
@@ -236,7 +237,7 @@ export async function allocateOverhead(tx: Tx, userId: string, poolId: string): 
   const byStone = new Map<string, { sku: string; weight: number }>();
   for (const r of returns) {
     const s = byStone.get(r.productId) ?? { sku: r.product.sku, weight: 0 };
-    s.weight += r.issueWeight ?? 0;
+    s.weight += num0(r.issueWeight);
     byStone.set(r.productId, s);
   }
   const stones = [...byStone.entries()].map(([id, s]) => ({ id, sku: s.sku, weight: s.weight }));

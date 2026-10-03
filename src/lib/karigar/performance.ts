@@ -1,4 +1,5 @@
 import "server-only";
+import { num0 } from "@/lib/decimal";
 import { prisma } from "@/lib/prisma";
 
 export type PerformanceLine = {
@@ -77,10 +78,10 @@ export async function karigarPerformance(start: Date, end: Date, partyId?: strin
     const l = ensure(m.partyId, m.party.name);
     l.returns++;
     l.pieces += m.returnPieces ?? m.issuePieces;
-    l.caratsIssued += m.issueWeight ?? 0;
+    l.caratsIssued += num0(m.issueWeight);
     if (m.lossWeight !== null && m.issueWeight) {
       l.caratsLost += Number(m.lossWeight);
-      l.issuedForLoss += m.issueWeight;
+      l.issuedForLoss += num0(m.issueWeight);
     }
     if (m.isExcessLoss) l.excessCount++;
   }

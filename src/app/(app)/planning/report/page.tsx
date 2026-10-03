@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/authz";
@@ -25,7 +26,7 @@ export default async function PlannedVsActualPage() {
     const plan = s.plans[0];
     const rough = s.roughWeight !== null ? Number(s.roughWeight) : null;
     const planned = Number(plan.plannedWeight);
-    const actual = s.polishedStone?.caratWeight ?? null;
+    const actual = num(s.polishedStone?.caratWeight);
     const actualValue = s.polishedStone?.soldPrice ?? s.polishedStone?.askingPrice ?? null;
     return { s, plan, rough, planned, actual, actualValue };
   });

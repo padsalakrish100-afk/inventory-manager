@@ -1,3 +1,4 @@
+import { num, num0 } from "@/lib/decimal";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ExportButtons } from "@/components/export-buttons";
@@ -62,14 +63,14 @@ export default async function LottingPage() {
                   </Link>
                 </td>
                 <td className="px-4 py-3 text-zinc-500">{lot.sourceParty?.name ?? "—"}</td>
-                <td className="px-4 py-3 text-zinc-500">{lot.roughWeight ?? "—"} ct</td>
+                <td className="px-4 py-3 text-zinc-500">{num(lot.roughWeight) ?? "—"} ct</td>
                 {showCost && (
                   <td className="px-4 py-3 text-zinc-500">
                     {lot.purchaseCost !== null ? (
                       <>
-                        {lot.purchaseCost.toLocaleString("en-IN")}
+                        {num0(lot.purchaseCost).toLocaleString("en-IN")}
                         {lot.roughWeight ? (
-                          <span className="text-zinc-400"> (≈ {(lot.purchaseCost / lot.roughWeight).toFixed(2)}/ct)</span>
+                          <span className="text-zinc-400"> (≈ {(num0(lot.purchaseCost) / num0(lot.roughWeight)).toFixed(2)}/ct)</span>
                         ) : null}
                       </>
                     ) : (

@@ -1,4 +1,5 @@
 import "server-only";
+import { num, num0 } from "@/lib/decimal";
 import { prisma } from "@/lib/prisma";
 import { formatDate } from "@/lib/dates";
 import { CUT_STYLE_LABELS } from "@/lib/cuts";
@@ -49,8 +50,8 @@ export const lossReport: ReportDef = {
       take: 20000,
     });
     const rows = moves.map((m) => {
-      const issue = m.issueWeight ?? 0;
-      const ret = m.returnWeight ?? 0;
+      const issue = num0(m.issueWeight);
+      const ret = num0(m.returnWeight);
       const loss = m.lossWeight !== null ? Number(m.lossWeight) : issue - ret;
       return {
         m,
@@ -183,7 +184,7 @@ export const yieldReport: ReportDef = {
     const rows = stones.map((p) => {
       const rough = p.sourceProduct.roughWeight !== null ? Number(p.sourceProduct.roughWeight) : null;
       const planned = p.sourceProduct.plans[0] ? Number(p.sourceProduct.plans[0].plannedWeight) : null;
-      return { p, rough, planned, polished: p.caratWeight };
+      return { p, rough, planned, polished: num(p.caratWeight) };
     });
     // Yield totals only count stones with both weights.
     const counted = rows.filter((r) => r.rough && r.polished);

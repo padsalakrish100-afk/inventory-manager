@@ -1,4 +1,5 @@
 import "server-only";
+import { num } from "@/lib/decimal";
 import type { Tx } from "@/lib/audit";
 import { CUT_STYLE_LABELS } from "@/lib/cuts";
 
@@ -26,9 +27,9 @@ export function describeStone(p: Describable): string {
 
 // A polished stone's weight for a document: its graded carats, else the
 // stone's current weight.
-export function caratsOf(polished: { caratWeight: number | null }, product: { caratWeight: number | null }): string {
-  const ct = polished.caratWeight ?? product.caratWeight ?? 0;
-  return Number(ct).toFixed(3);
+export function caratsOf(polished: { caratWeight: { toString(): string } | null }, product: { caratWeight: { toString(): string } | null }): string {
+  const ct = num(polished.caratWeight) ?? num(product.caratWeight) ?? 0;
+  return ct.toFixed(3);
 }
 
 // OPEN while every line is out, CLOSED once none is, PARTIAL in between.

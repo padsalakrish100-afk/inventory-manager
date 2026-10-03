@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/authz";
@@ -19,7 +20,7 @@ export default async function TransferPage({ params }: { params: Promise<{ id: s
           Stone {stone.sku} gets a new Stock ID once transferred. Fill in what&apos;s known now — it can be edited later.
         </p>
       </div>
-      <TransferForm productId={stone.id} defaultCaratWeight={stone.caratWeight} />
+      <TransferForm productId={stone.id} defaultCaratWeight={num(stone.caratWeight)} />
     </div>
   );
 }

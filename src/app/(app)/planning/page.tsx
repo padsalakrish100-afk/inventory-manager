@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { can, requirePagePermission } from "@/lib/authz";
@@ -108,7 +109,7 @@ export default async function PlanningPage({ searchParams }: { searchParams: Pro
             )}
             {stones.map((s) => {
               const plan = s.plans[0];
-              const rough = s.roughWeight !== null ? Number(s.roughWeight) : s.caratWeight;
+              const rough = s.roughWeight !== null ? Number(s.roughWeight) : num(s.caratWeight);
               return (
                 <tr key={s.id} className="border-b border-zinc-100 last:border-0">
                   <td className="px-4 py-2">

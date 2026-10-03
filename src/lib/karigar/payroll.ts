@@ -1,4 +1,5 @@
 import "server-only";
+import { num0 } from "@/lib/decimal";
 import type { Tx } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
@@ -68,7 +69,7 @@ export async function unpaidPayroll(
     const l = line(e.partyId, e.party.name);
     l.entries++;
     l.labour += cents(e.amount);
-    l.carats += e.movement.issueWeight ?? 0;
+    l.carats += num0(e.movement.issueWeight);
     l.pieces += e.movement.returnPieces ?? e.movement.issuePieces;
     if (e.fxRate === null) l.missingFx++;
   }

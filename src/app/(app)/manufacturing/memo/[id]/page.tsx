@@ -1,3 +1,4 @@
+import { num0 } from "@/lib/decimal";
 import { notFound } from "next/navigation";
 import { requirePagePermission } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
@@ -20,7 +21,7 @@ export default async function MemoPage({ params }: { params: Promise<{ id: strin
   if (!memo) notFound();
 
   const active = memo.movements.filter((m) => !m.voidedAt);
-  const totalWeight = active.reduce((sum, m) => sum + (m.issueWeight ?? 0), 0);
+  const totalWeight = active.reduce((sum, m) => sum + num0(m.issueWeight), 0);
   const totalPieces = active.reduce((sum, m) => sum + m.issuePieces, 0);
   const issuedBy = memo.movements[0]?.issuedBy?.name;
 

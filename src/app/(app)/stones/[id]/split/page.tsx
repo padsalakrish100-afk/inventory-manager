@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -37,7 +38,7 @@ export default async function SplitPage({ params }: { params: Promise<{ id: stri
       <SplitForm
         stoneId={stone.id}
         sku={stone.sku}
-        currentWeight={stone.caratWeight}
+        currentWeight={num(stone.caratWeight)}
         roughWeight={stone.roughWeight !== null ? Number(stone.roughWeight) : null}
       />
     </div>

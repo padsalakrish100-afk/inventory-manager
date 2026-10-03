@@ -1,4 +1,5 @@
 "use server";
+import { num, num0 } from "@/lib/decimal";
 
 import { assertPeriodsOpen, UserFacingError } from "@/lib/period-lock";
 import { revalidatePath } from "next/cache";
@@ -179,7 +180,7 @@ export async function issueStones(input: IssueInput): Promise<IssueResult> {
 
       for (const s of d.stones) {
         const product = bySku.get(s.sku)!;
-        const weight = s.weight !== null ? Number(s.weight) : product.caratWeight!;
+        const weight = s.weight !== null ? Number(s.weight) : num0(product.caratWeight);
 
         const movement = await tx.processMovement.create({
           data: {
@@ -341,7 +342,7 @@ export async function returnStones(input: ReturnInput): Promise<ReturnResult> {
           throw new UserError(`Stone "${s.sku}" is in another department — you can't return it.`);
         }
 
-        const issueWeight = openMovement.issueWeight;
+        const issueWeight = num(openMovement.issueWeight);
         const loss = issueWeight !== null ? computeLoss(issueWeight, s.weight, s.topsWeight) : null;
         if (loss && Number(loss.lossWeight) < 0) {
           throw new UserError(`Stone "${s.sku}": return weight is more than the ${issueWeight} ct issued.`);
@@ -519,8 +520,8 @@ export async function transferToPolish(
           stoneId: product.id,
           type: "TRANSFER_TO_POLISH",
           userId: viewer.id,
-          weightBefore: product.caratWeight,
-          weightAfter: polished.caratWeight,
+          weightBefore: num(product.caratWeight),
+          weightAfter: num(polished.caratWeight),
           refType: "PolishedStone",
           refId: polished.id,
           summary: `Transferred to Polish as ${polished.stockId}`,

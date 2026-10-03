@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import { can, getViewer } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { parseScannedCode } from "@/lib/stone/scan";
@@ -54,9 +55,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ sku
     stage: open.stage?.name ?? null,
     isSawing: isSawingStage(open.stage),
     party: open.party?.name ?? open.toDepartment?.name ?? null,
-    issueWeight: open.issueWeight,
+    issueWeight: num(open.issueWeight),
     issuePieces: open.issuePieces,
     lossLimitPct: await resolveLossLimit(prisma, open.stage?.id ?? null, open.partyId, new Date()),
-    caratWeight: product.caratWeight,
+    caratWeight: num(product.caratWeight),
   });
 }

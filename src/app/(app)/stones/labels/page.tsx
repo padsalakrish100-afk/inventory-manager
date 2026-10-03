@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/authz";
@@ -36,7 +37,7 @@ export default async function StoneLabelsPage({ searchParams }: { searchParams: 
       line1: s.polishedStone
         ? [s.polishedStone.stockId, s.polishedStone.shape].filter(Boolean).join(" · ")
         : s.lot?.lotNumber ?? null,
-      line2: formatCarat(s.polishedStone?.caratWeight ?? s.caratWeight),
+      line2: formatCarat(num(s.polishedStone?.caratWeight) ?? num(s.caratWeight)),
     })),
   );
 

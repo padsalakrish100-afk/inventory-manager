@@ -1,3 +1,4 @@
+import { num0 } from "@/lib/decimal";
 import Papa from "papaparse";
 import { can, getViewer } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
@@ -77,8 +78,10 @@ export async function GET(request: Request) {
 
   const num = (v: { toString(): string } | null) => (v === null ? "" : Number(v.toString()).toString());
   const rows = stones.flatMap((p) => {
-    const asking = p.currency === "INR" ? (fx ? p.askingPrice! / Number(fx) : null) : p.askingPrice!;
-    if (asking === null || !p.caratWeight) return [];
+    const askingPrice = num0(p.askingPrice);
+    const carats = num0(p.caratWeight);
+    const asking = p.currency === "INR" ? (fx ? askingPrice / Number(fx) : null) : askingPrice;
+    if (asking === null || !carats) return [];
     const shape = (p.cutStyle && RAPNET_SHAPE[p.cutStyle]) || p.shape || "";
     const comments = [p.cutStyle ? (CUT_STYLE_LABELS[p.cutStyle] ?? p.cutStyle) : null, p.shape && shape !== p.shape ? p.shape : null]
       .filter(Boolean)
@@ -88,7 +91,7 @@ export async function GET(request: Request) {
         p.stockId,
         p.sourceProduct.status === "ON_MEMO" ? "On Memo" : "Guaranteed Available",
         shape,
-        p.caratWeight.toFixed(2),
+        carats.toFixed(2),
         p.color ?? "",
         p.clarity ?? "",
         p.cutGrade ?? "",
@@ -99,7 +102,7 @@ export async function GET(request: Request) {
         p.certLab ?? "",
         p.certNumber ?? "",
         verifyUrl(p.certLab, p.certNumber) ?? "",
-        (asking / p.caratWeight).toFixed(2),
+        (asking / carats).toFixed(2),
         asking.toFixed(2),
         num(p.depthPct),
         num(p.tablePct),

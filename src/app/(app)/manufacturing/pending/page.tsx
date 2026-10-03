@@ -1,3 +1,4 @@
+import { num, num0 } from "@/lib/decimal";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requirePagePermission } from "@/lib/authz";
@@ -59,7 +60,7 @@ export default async function PendingPage({ searchParams }: { searchParams: Prom
           : (m.party?.name ?? (m.toDepartment ? `${m.toDepartment.name} (department)` : "Unassigned"));
     const g = groups.get(label) ?? { label, rows: [], weight: 0, pieces: 0, overdue: 0 };
     g.rows.push(m);
-    g.weight += m.issueWeight ?? 0;
+    g.weight += num0(m.issueWeight);
     g.pieces += m.issuePieces;
     if (daysSince(m.issueDate, now) > alertDays) g.overdue++;
     groups.set(label, g);
@@ -179,7 +180,7 @@ export default async function PendingPage({ searchParams }: { searchParams: Prom
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap text-zinc-600">{formatDate(m.issueDate)}</td>
                       <td className="px-4 py-2 text-right whitespace-nowrap text-zinc-600">
-                        {m.issueWeight ?? "—"} ct{m.issuePieces > 1 ? ` · ${m.issuePieces} pc` : ""}
+                        {num(m.issueWeight) ?? "—"} ct{m.issuePieces > 1 ? ` · ${m.issuePieces} pc` : ""}
                       </td>
                       <td className={`px-4 py-2 text-right font-medium ${overdue ? "text-red-700" : "text-zinc-900"}`}>{days}</td>
                     </tr>

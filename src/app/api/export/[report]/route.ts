@@ -1,3 +1,4 @@
+import { num, num0 } from "@/lib/decimal";
 import { can, getViewer, type Permission } from "@/lib/authz";
 import { writeAudit } from "@/lib/audit";
 import { formatDate } from "@/lib/dates";
@@ -82,7 +83,7 @@ async function buildReport(
           stockId: p.stockId,
           cutStyle: p.cutStyle ? (CUT_STYLE_LABELS[p.cutStyle] ?? p.cutStyle) : "",
           shape: p.shape ?? "",
-          carat: p.caratWeight ?? "",
+          carat: num(p.caratWeight) ?? "",
           color: p.color ?? "",
           clarity: p.clarity ?? "",
           cut: p.cutGrade ?? "",
@@ -124,7 +125,7 @@ async function buildReport(
         rows: rows.map((p) => ({
           stockId: p.stockId,
           shape: p.shape ?? "",
-          carat: p.caratWeight ?? "",
+          carat: num(p.caratWeight) ?? "",
           status: POLISH_STATUS_LABELS[p.status] ?? p.status,
           location: p.location ?? "",
           askingPrice: p.askingPrice !== null ? formatMoney(p.askingPrice, p.currency) : "",
@@ -140,7 +141,7 @@ async function buildReport(
         const stonesInStatus = stones.filter((p) => p.status === s.value);
         const totals = new Map<string, number>();
         for (const p of stonesInStatus) {
-          const value = s.value === "SOLD" ? p.soldPrice : p.askingPrice;
+          const value = num(s.value === "SOLD" ? p.soldPrice : p.askingPrice);
           if (value === null) continue;
           totals.set(p.currency, (totals.get(p.currency) ?? 0) + value);
         }
@@ -202,7 +203,7 @@ async function buildReport(
         rows: stones.map((p) => {
           const c = costs.get(p.sourceProductId);
           const totalCost = c ? (p.currency === "INR" ? c.inrCents : c.usdCents) / 100 : 0;
-          const margin = p.soldPrice !== null ? p.soldPrice - totalCost : null;
+          const margin = p.soldPrice !== null ? num0(p.soldPrice) - totalCost : null;
           return {
             stockId: p.stockId,
             buyer: p.buyer?.name ?? "",
@@ -283,7 +284,7 @@ async function buildReport(
         rows: lots.map((lot) => ({
           lotNumber: lot.lotNumber,
           source: lot.sourceParty?.name ?? "",
-          roughWeight: lot.roughWeight ?? "",
+          roughWeight: num(lot.roughWeight) ?? "",
           stones: lot._count.products,
           date: formatDate(lot.createdAt),
         })),

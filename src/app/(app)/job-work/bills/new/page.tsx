@@ -1,3 +1,4 @@
+import { num } from "@/lib/decimal";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -33,8 +34,8 @@ export default async function NewJobWorkBillPage({ searchParams }: { searchParam
           id: j.id,
           sku: j.product.sku,
           stage: j.stage?.name ?? "—",
-          issueWeight: j.issueWeight,
-          returnWeight: j.returnWeight,
+          issueWeight: num(j.issueWeight),
+          returnWeight: num(j.returnWeight),
           returnDate: j.returnDate!.toISOString(),
         }))}
       />
