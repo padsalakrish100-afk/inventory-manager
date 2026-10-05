@@ -16,5 +16,6 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico).*)"],
+  // Public brand assets (logo, tab and home-screen icons) skip the sign-in check.
+  matcher: ["/((?!api/auth|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png|brand/).*)"],
 };

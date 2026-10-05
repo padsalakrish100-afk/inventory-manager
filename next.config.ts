@@ -13,6 +13,11 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // The logo is read from disk when building PDFs; ship it with those routes.
+  outputFileTracingIncludes: {
+    "/api/documents/**": ["./public/brand/logo.png"],
+    "/api/export/**": ["./public/brand/logo.png"],
+  },
   experimental: {
     serverActions: {
       // Photos are compressed in the browser first (≈300 KB each, max 4 per

@@ -1,10 +1,11 @@
-import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Image, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { brandLogo } from "@/lib/export/brand";
 
 export type PdfColumn = { header: string; key: string; flex?: number };
 
 const styles = StyleSheet.create({
   page: { padding: 28, fontSize: 9, fontFamily: "Helvetica" },
-  title: { fontSize: 16, marginBottom: 2, fontFamily: "Helvetica-Bold" },
+  title: { fontSize: 17, fontFamily: "Times-Bold" },
   subtitle: { fontSize: 9, color: "#71717a", marginBottom: 4 },
   generated: { fontSize: 8, color: "#a1a1aa", marginBottom: 14 },
   headerRow: {
@@ -38,7 +39,11 @@ function TableDocument({
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={styles.page}>
-        <Text style={styles.title}>{title}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image (PDF), not an HTML img */}
+          {brandLogo() && <Image src={{ data: brandLogo()!, format: "png" }} style={{ width: 30, height: 30 }} />}
+          <Text style={styles.title}>{title}</Text>
+        </View>
         {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
         <Text style={styles.generated}>Generated {new Date().toLocaleString()}</Text>
         <View style={styles.headerRow}>

@@ -25,13 +25,18 @@ export default async function Dashboard() {
   const stock = can(viewer, "stock.view") ? await stockValue() : null;
   const sales = can(viewer, "sales.reports") && can(viewer, "sales.manage") ? await monthSales(costs) : null;
   const receivables = can(viewer, "sales.manage") ? await receivablesSummary() : null;
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "numeric", hourCycle: "h23" }).format(new Date()));
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const today = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date());
   const month = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", month: "long", year: "numeric" }).format(new Date());
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-zinc-500">Good to see you, {viewer.name.split(" ")[0]}.</p>
+        <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">{today}</p>
+        <h1 className="mt-1 text-zinc-900">
+          {greeting}, {viewer.name.split(" ")[0]}
+        </h1>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -167,7 +172,7 @@ export default async function Dashboard() {
               {stages.stages.map((s) => (
                 <Link key={s.id} href={`/manufacturing/pending?stage=${s.id}`} className="rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 hover:bg-zinc-100">
                   <p className="truncate text-xs text-zinc-500">{s.name}</p>
-                  <p className="text-xl font-semibold text-zinc-900">{s.count}</p>
+                  <p className="font-serif text-2xl font-semibold text-zinc-900">{s.count}</p>
                 </Link>
               ))}
             </div>
@@ -192,9 +197,9 @@ export default async function Dashboard() {
 
 function Card({ title, href, children, className = "" }: { title: string; href: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className={`flex flex-col rounded-lg border border-zinc-200 bg-white p-4 ${className}`}>
+    <section className={`flex flex-col rounded-xl border border-zinc-200 bg-white p-5 ${className}`}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium text-zinc-600">{title}</h2>
+        <h2 className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">{title}</h2>
         <Link href={href} className="text-xs text-zinc-400 hover:text-zinc-700 hover:underline">
           Open &rarr;
         </Link>
@@ -205,5 +210,5 @@ function Card({ title, href, children, className = "" }: { title: string; href: 
 }
 
 function Big({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <p className={`text-2xl font-semibold text-zinc-900 ${className}`}>{children}</p>;
+  return <p className={`font-serif text-[1.9rem] font-semibold leading-tight text-zinc-900 ${className}`}>{children}</p>;
 }

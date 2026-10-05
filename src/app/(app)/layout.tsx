@@ -1,8 +1,10 @@
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
-import { signOut } from "@/auth";
 import { getSettings } from "@/lib/settings";
 import { can, getViewer, ROLE_LABELS, type Permission } from "@/lib/authz";
+import { DesktopNav, MobileNav, type NavItem } from "./app-nav";
+import { signOutAction } from "./sign-out-action";
 
 const navItems: { href: string; label: string; permission: Permission; hideFor?: string[] }[] = [
   { href: "/stones", label: "Stones", permission: "stones.view" },
@@ -28,65 +30,65 @@ export default async function AppLayout({
     redirect("/login");
   }
 
-  const { appName } = await getSettings();
-  const visibleItems = navItems.filter((item) => can(viewer, item.permission) && !item.hideFor?.includes(viewer.role));
+  const { companyName, appName } = await getSettings();
+  const brand = companyName || appName;
+  const visibleItems: NavItem[] = navItems
+    .filter((item) => can(viewer, item.permission) && !item.hideFor?.includes(viewer.role))
+    .map(({ href, label }) => ({ href, label }));
+  const operator = viewer.role === "OPERATOR";
+  const desktopItems: NavItem[] = [...(operator ? [] : [{ href: "/", label: "Dashboard" }]), { href: "/scan", label: "Scan" }, ...visibleItems];
+  // On a laptop the less-used sections go under "More".
+  const moreHrefs = new Set(["/rough", "/lotting", "/karigars", "/costing", "/settings"]);
+  const barItems = desktopItems.filter((i) => !moreHrefs.has(i.href));
+  const moreItems = desktopItems.filter((i) => moreHrefs.has(i.href));
+  // Phone tabs: the screens each role opens most.
+  const tabs: NavItem[] = operator
+    ? [
+        { href: "/scan", label: "Scan" },
+        { href: "/manufacturing/issue", label: "Issue" },
+        { href: "/manufacturing/return", label: "Return" },
+      ]
+    : [
+        { href: "/", label: "Home" },
+        { href: "/scan", label: "Scan" },
+        can(viewer, "stock.view") ? { href: "/polish", label: "Stock" } : { href: "/stones", label: "Stones" },
+      ];
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-zinc-200 bg-white print:hidden">
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <Link href="/" className="shrink-0 whitespace-nowrap font-semibold text-[var(--accent)]">
-              {appName}
-            </Link>
-            <div className="flex items-center gap-2 text-sm text-zinc-600 sm:hidden">
-              <Link href="/account" className="max-w-[9rem] truncate hover:underline">
-                {viewer.name}
-              </Link>
-            </div>
-          </div>
+      <header className="sticky top-0 z-30 bg-[var(--graphite)] text-white print:hidden">
+        <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-2.5">
+          <Link href={operator ? "/scan" : "/"} className="flex shrink-0 items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white">
+              <Image src="/brand/logo.png" alt="" width={34} height={34} priority className="h-[34px] w-[34px]" />
+            </span>
+            <span className="font-serif text-lg uppercase tracking-[0.22em] text-white">{brand}</span>
+          </Link>
 
-          {/* Scrolls sideways on a phone instead of wrapping. */}
-          <nav className="-mx-4 flex gap-1 overflow-x-auto px-4 text-sm [scrollbar-width:none] sm:mx-0 sm:flex-1 sm:px-0 sm:pl-4 [&::-webkit-scrollbar]:hidden">
-            <Link
-              href="/scan"
-              className="flex min-h-10 items-center whitespace-nowrap rounded-md bg-[var(--accent)] px-3 font-medium text-white hover:brightness-110"
-            >
-              Scan
-            </Link>
-            {visibleItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex min-h-10 items-center whitespace-nowrap rounded-md px-3 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <DesktopNav items={barItems} more={moreItems} />
 
-          <div className="hidden shrink-0 items-center gap-3 text-sm text-zinc-600 sm:flex">
-            <Link href="/account" className="whitespace-nowrap hover:text-zinc-900 hover:underline">
-              {viewer.name} ({ROLE_LABELS[viewer.role]})
+          <div className="ml-auto hidden shrink-0 items-center gap-3 text-sm lg:flex">
+            <Link href="/account" className="hidden whitespace-nowrap text-[var(--silver)] hover:text-white xl:block">
+              {viewer.name} <span className="hidden text-zinc-500 xl:inline">· {ROLE_LABELS[viewer.role]}</span>
             </Link>
-            <form
-              action={async () => {
-                "use server";
-                await signOut({ redirectTo: "/login" });
-              }}
-            >
+            <form action={signOutAction}>
               <button
                 type="submit"
-                className="whitespace-nowrap rounded-md border border-zinc-300 px-3 py-1 text-zinc-700 hover:bg-zinc-50"
+                className="whitespace-nowrap rounded-md border border-white/20 px-3 py-1.5 text-[var(--silver)] hover:border-white/40 hover:text-white"
               >
                 Sign out
               </button>
             </form>
           </div>
+          <Link href="/account" className="ml-auto hidden max-w-[8rem] truncate text-sm text-[var(--silver)] sm:block lg:hidden">
+            {viewer.name}
+          </Link>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-28 pt-6 sm:pt-8 lg:pb-10">{children}</main>
+
+      <MobileNav tabs={tabs} items={desktopItems} userLabel={`${viewer.name} · ${ROLE_LABELS[viewer.role]}`} />
     </div>
   );
 }

@@ -1,12 +1,43 @@
 @import "tailwindcss";
 
+/* Platinum monochrome, after the Opulent Diam logo: graphite, silver and
+   white. Colour is kept for status (red, amber, green) so alerts stand out. */
 :root {
-  --accent: #18181b;
+  --accent: #1d1d1f;
+  --graphite: #1d1d1f;
+  --silver: #a9abb0;
+  --canvas: #f6f6f7;
 }
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-cormorant);
   --font-mono: var(--font-geist-mono);
+}
+
+/* Page titles in the brand serif (unlayered, so it wins over the utility
+   classes each page sets on its heading). */
+main h1 {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-size: 2rem;
+  line-height: 2.4rem;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+}
+
+main h2 {
+  letter-spacing: -0.005em;
+}
+
+/* Hairline-white cards and inputs on the soft grey canvas. */
+input,
+select,
+textarea {
+  background-color: #ffffff;
+}
+
+::selection {
+  background: #d9dadd;
 }
 
 @media print {
@@ -30,4 +61,12 @@
     left: 0;
     width: 100%;
   }
+}
+
+/* The brand serif defaults to old-style figures ("0" reads as "o");
+   numbers use modern lining figures. */
+.font-serif,
+main h1 {
+  font-variant-numeric: lining-nums;
+  font-feature-settings: "lnum" 1;
 }

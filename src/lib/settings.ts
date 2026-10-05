@@ -4,6 +4,8 @@ export type AppSettings = {
   appName: string;
   locations: string[];
   accentColor: string;
+  // Shown next to the logo (Settings → Company & documents).
+  companyName: string;
   updatedAtIso: string;
 };
 
@@ -27,6 +29,7 @@ export async function getSettings(): Promise<AppSettings> {
       .map((l) => l.trim())
       .filter(Boolean),
     accentColor: row.accentColor,
+    companyName: row.companyName,
     updatedAtIso: row.updatedAt.toISOString(),
   };
 }

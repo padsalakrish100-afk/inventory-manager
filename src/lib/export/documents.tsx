@@ -1,4 +1,5 @@
-import { Document, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Image, Page, Text, View, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { brandLogo } from "@/lib/export/brand";
 import type { DocumentSettings } from "@/lib/sales/company";
 
 // Printable sales memo and invoice (A4 portrait).
@@ -6,7 +7,7 @@ import type { DocumentSettings } from "@/lib/sales/company";
 const s = StyleSheet.create({
   page: { padding: 36, fontSize: 9, fontFamily: "Helvetica", color: "#18181b" },
   header: { flexDirection: "row", justifyContent: "space-between", marginBottom: 18 },
-  company: { fontSize: 15, fontFamily: "Helvetica-Bold" },
+  company: { fontSize: 15, fontFamily: "Times-Bold", letterSpacing: 2.5, textTransform: "uppercase" },
   small: { fontSize: 8, color: "#52525b", lineHeight: 1.4 },
   docTitle: { fontSize: 13, fontFamily: "Helvetica-Bold", textAlign: "right" },
   docMeta: { fontSize: 9, textAlign: "right", lineHeight: 1.5 },
@@ -37,12 +38,17 @@ const COLS = [
 export type DocLine = { stockId: string; description: string; carats: string; perCt: string; amount: string };
 
 function Company({ c }: { c: DocumentSettings }) {
+  const logo = brandLogo();
   return (
-    <View style={{ maxWidth: 280 }}>
+    <View style={{ maxWidth: 320, flexDirection: "row", gap: 10 }}>
+      {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image (PDF), not an HTML img */}
+      {logo && <Image src={{ data: logo, format: "png" }} style={{ width: 46, height: 46 }} />}
+      <View>
       <Text style={s.company}>{c.companyName}</Text>
       {c.companyAddress && <Text style={s.small}>{c.companyAddress}</Text>}
       {(c.companyPhone || c.companyEmail) && <Text style={s.small}>{[c.companyPhone, c.companyEmail].filter(Boolean).join(" · ")}</Text>}
       {c.companyTaxInfo && <Text style={s.small}>{c.companyTaxInfo}</Text>}
+      </View>
     </View>
   );
 }
